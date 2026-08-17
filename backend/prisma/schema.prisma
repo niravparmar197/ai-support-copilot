@@ -1,0 +1,430 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  SUPPORT_USER
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  status    TenantStatus
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  users          User[]
+  customers      Customer[]
+  tickets        Ticket[]
+  ticketMessages TicketMessage[]
+  documents      Document[]
+  documentChunks DocumentChunk[]
+  orders         Order[]
+  payments       Payment[]
+  approvals      Approval[]
+  auditLogs      AuditLog[]
+  aiRuns         AiRun[]
+  aiFeedback     AiFeedback[]
+
+  @@map("tenants")
+}
+
+// SUPER_ADMIN: tenantId is null (platform-level, belongs to no tenant).
+// COMPANY_ADMIN / SUPPORT_USER / CUSTOMER: tenantId is always set — enforced
+// in the service layer, not the schema (see Q1 in the accompanying answer).
+model User {
+  id           String     @id @default(cuid())
+  tenantId     String?    @map("tenant_id")
+  email        String
+  passwordHash String     @map("password_hash")
+  role         UserRole
+  status       UserStatus
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  tenant            Tenant?       @relation(fields: [tenantId], references: [id])
+  sessions          UserSession[]
+  assignedTickets   Ticket[]
+  uploadedDocuments Document[]
+  resolvedApprovals Approval[]
+
+  // Scoped per-tenant, not global — see Q2 in the accompanying answer.
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model UserSession {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ip               String?
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_sessions")
+}
+
+// Catalog of permission keys. Global, not tenant-scoped — see Q2 in the
+// accompanying answer. Seed data (Day 13 role menus) — cataloged here for
+// awareness, actual seeding happens in a later session:
+//   ticket.read, ticket.assign, ticket.reply, user.create, user.manage,
+//   customer.manage, document.upload, document.delete, approval.approve,
+//   approval.reject, ai.copilot.use, platform.company.manage
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  description String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+// Grants a permission to a role. `role` reuses the User.role enum rather
+// than a separate Role table — see Q1 in the accompanying answer. Global,
+// same reasoning as Permission — see Q2.
+model RolePermission {
+  id           String   @id @default(cuid())
+  role         UserRole
+  permissionId String   @map("permission_id")
+
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([role, permissionId])
+  @@map("role_permissions")
+}
+
+enum TicketStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  WAITING_FOR_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MessageAuthorType {
+  CUSTOMER
+  SUPPORT
+  AI
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  email     String
+  phone     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  tickets Ticket[]
+  orders  Order[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("customers")
+}
+
+// assignedUserId is nullable — unassigned tickets exist (OPEN, pre-triage).
+// Points at User, never Customer — see Q2 in the accompanying answer.
+// Nothing at the schema level restricts assignment to staff roles
+// (SUPPORT_USER / COMPANY_ADMIN); that lives in the assignment service.
+model Ticket {
+  id             String         @id @default(cuid())
+  tenantId       String         @map("tenant_id")
+  customerId     String         @map("customer_id")
+  assignedUserId String?        @map("assigned_user_id")
+  subject        String
+  status         TicketStatus
+  priority       TicketPriority
+  category       String?
+  sentiment      String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id])
+  customer     Customer        @relation(fields: [customerId], references: [id])
+  assignedUser User?           @relation(fields: [assignedUserId], references: [id])
+  messages     TicketMessage[]
+  aiRuns       AiRun[]
+
+  @@index([tenantId, status])
+  @@map("tickets")
+}
+
+// authorId is a bare, unconstrained field, not a @relation — it points at
+// Customer.id when authorType = CUSTOMER, User.id when authorType = SUPPORT,
+// and is null when authorType = AI. Postgres can't express an FK that
+// targets one of two different tables depending on a sibling column, so
+// there's no DB-level referential integrity here; authorType/authorId
+// consistency has to be validated in the service layer. See Q3.
+//
+// tenantId is denormalized (always equal to ticket.tenantId) — see the
+// fourth note in the accompanying answer.
+model TicketMessage {
+  id         String            @id @default(cuid())
+  tenantId   String            @map("tenant_id")
+  ticketId   String            @map("ticket_id")
+  authorType MessageAuthorType @map("author_type")
+  authorId   String?           @map("author_id")
+  content    String
+  createdAt  DateTime          @default(now()) @map("created_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  ticket Ticket @relation(fields: [ticketId], references: [id])
+
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  INDEXED
+  FAILED
+}
+
+model Document {
+  id           String         @id @default(cuid())
+  tenantId     String         @map("tenant_id")
+  filename     String
+  mimeType     String         @map("mime_type")
+  sizeBytes    Int            @map("size_bytes")
+  status       DocumentStatus
+  uploadedById String         @map("uploaded_by_id")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  tenant     Tenant          @relation(fields: [tenantId], references: [id])
+  uploadedBy User            @relation(fields: [uploadedById], references: [id])
+  chunks     DocumentChunk[]
+
+  @@index([tenantId, status])
+  @@map("documents")
+}
+
+// embedding is Unsupported("vector(768)") — invisible to Prisma Client's
+// normal query API. Reads/writes go through $queryRaw/$executeRaw starting
+// Day 26-27 ingestion. Nullable until then. Dimension (768) matches Gemini
+// text-embedding's default per the task, but needs re-confirming against
+// whichever embedding model is actually wired up on Day 26 — see Q2 in the
+// accompanying answer; changing it later means a migration *and*
+// re-embedding every existing chunk, not just a schema edit.
+//
+// tenantId is denormalized from document.tenantId — unlike D-014's
+// TicketMessage.tenantId, this is justified by a named hot path: Day 27
+// dense retrieval filters directly on tenant_id in the same query that
+// orders by embedding distance. See Q1.
+//
+// TODO(Day 26): add the ivfflat/hnsw ANN index on `embedding` via a
+// hand-edited raw SQL migration — not expressible through Prisma's schema
+// DSL, so it will never appear here as a Prisma-native index.
+model DocumentChunk {
+  id         String                      @id @default(cuid())
+  documentId String                      @map("document_id")
+  tenantId   String                      @map("tenant_id")
+  content    String
+  embedding  Unsupported("vector(768)")?
+  pageNumber Int?                        @map("page_number")
+  chunkIndex Int                         @map("chunk_index")
+  createdAt  DateTime                    @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("document_chunks")
+}
+
+// Minimal — exists mainly to support AI tools (per the plan), not full
+// order management. No index requested: looked up by a specific
+// customerId/orderId, not paginated as a tenant-wide list the way Ticket
+// is, so @@index([tenantId]) wasn't added here unlike other tenant models.
+model Order {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  customerId  String   @map("customer_id")
+  totalAmount Decimal  @map("total_amount")
+  status      String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  customer Customer  @relation(fields: [customerId], references: [id])
+  payments Payment[]
+
+  @@map("orders")
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  orderId   String   @map("order_id")
+  amount    Decimal
+  status    String
+  method    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  order  Order  @relation(fields: [orderId], references: [id])
+
+  @@map("payments")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ApprovalRequesterType {
+  AI
+  USER
+}
+
+enum ApprovalRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// requestedById is a bare, unconstrained field, not a @relation — same
+// polymorphic shape as TicketMessage.authorId (D-014): points at User.id
+// or AiRun.id depending on requestedByType, validated at the service layer,
+// no DB-level referential integrity. See Q2.
+model Approval {
+  id              String                @id @default(cuid())
+  tenantId        String                @map("tenant_id")
+  type            String
+  status          ApprovalStatus
+  requestedByType ApprovalRequesterType @map("requested_by_type")
+  requestedById   String?               @map("requested_by_id")
+  amount          Decimal?
+  reason          String
+  riskLevel       ApprovalRiskLevel     @map("risk_level")
+  resolvedById    String?               @map("resolved_by_id")
+  resolvedAt      DateTime?             @map("resolved_at")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id])
+  resolvedBy User?  @relation(fields: [resolvedById], references: [id])
+
+  @@index([tenantId, status])
+  @@map("approvals")
+}
+
+// tenantId nullable — the one intentional exception in this batch (and the
+// same reasoning as User.tenantId in D-008): platform-level actions
+// (SUPER_ADMIN creating/suspending a company) have no tenant context. See
+// Q1. actorId has no @relation — deliberately unconstrained, same as
+// TicketMessage.authorId/Approval.requestedById, so the audit trail
+// survives even if the referenced user is later deleted, and so
+// system-generated actions with no real User actor can still be logged.
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String?  @map("tenant_id")
+  actorId    String?  @map("actor_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("audit_logs")
+}
+
+enum AiRunType {
+  CLASSIFY
+  COPILOT
+  AGENT
+}
+
+enum AiRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model AiRun {
+  id        String      @id @default(cuid())
+  tenantId  String      @map("tenant_id")
+  ticketId  String?     @map("ticket_id")
+  type      AiRunType
+  input     Json
+  output    Json?
+  traceId   String?     @map("trace_id")
+  tokens    Int?
+  cost      Decimal?
+  status    AiRunStatus
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  ticket   Ticket?      @relation(fields: [ticketId], references: [id])
+  feedback AiFeedback[]
+
+  @@index([tenantId, ticketId])
+  @@map("ai_runs")
+}
+
+enum AiFeedbackType {
+  ACCEPT
+  EDIT
+  REJECT
+}
+
+// No tenantId in your field list (unlike DocumentChunk, which listed one
+// explicitly) — added anyway per the blanket "tenantId required except
+// AuditLog" rule, same treatment as TicketMessage in D-014. Denormalized
+// from aiRun.tenantId; no index requested for it directly, so — same
+// caveat as D-014 — it exists for the ownership invariant, not a query
+// pattern, and nothing stops it drifting from its AiRun's actual tenant.
+model AiFeedback {
+  id            String         @id @default(cuid())
+  tenantId      String         @map("tenant_id")
+  aiRunId       String         @map("ai_run_id")
+  type          AiFeedbackType
+  editedContent String?        @map("edited_content")
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  aiRun  AiRun  @relation(fields: [aiRunId], references: [id])
+
+  @@map("ai_feedback")
+}

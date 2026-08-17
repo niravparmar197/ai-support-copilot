@@ -68,3 +68,303 @@ vendor prefixing internally.
 Why: Confirmed with the user rather than silently pinning to an older major version.
 Trade-off: Future theme customization (colors, spacing, tokens) uses v4's `@theme`
 CSS-based syntax instead of the more commonly-documented `tailwind.config.js` JS API.
+
+## D-007: Prisma 7 — no schema-level datasource URL, driver adapter required at runtime
+Date: 2026-08-18
+Context: Prisma tooling setup called for the classic `datasource db { url =
+env("DATABASE_URL") }` pattern. `npm install prisma` pulled Prisma 7.9.1 (current
+latest), which hard-rejects `url` in the schema's `datasource` block entirely
+(`P1012: The datasource property 'url' is no longer supported in schema files`) —
+this is a validation error, not a warning. Prisma 7 also scaffolds a `prisma.config.ts`
+file (superseding the old `"prisma": { "schema": ... }` key in `package.json`) and
+defaults `generator client` to a new `provider = "prisma-client"` (ESM, outputs to
+`src/generated/prisma`) instead of the classic `prisma-client-js`.
+Decision: `schema.prisma`'s `datasource db` block has no `url` — only `provider =
+"postgresql"`. The connection URL lives solely in `prisma.config.ts`
+(`datasource.url: process.env["DATABASE_URL"]`), used by the CLI (`migrate`,
+`studio`, `db pull`). `generator client` stays on `provider = "prisma-client-js"` (the
+classic generator, still supported in v7, just no longer the default) rather than
+switching to the new `prisma-client` provider, since the task asked for it explicitly
+and it keeps the familiar `import { PrismaClient } from '@prisma/client'` import
+style. The legacy `"prisma"` key was still added to `backend/package.json` as asked —
+Prisma 7 doesn't warn about it coexisting with `prisma.config.ts`.
+**Consequence for Day 2 (when models + `PrismaService` get written by hand):**
+`new PrismaClient()` can no longer implicitly read a schema-embedded connection URL.
+The service will need to construct `PrismaClient` with a driver adapter (e.g.
+`@prisma/adapter-pg` wrapping `pg`, reading `DATABASE_URL` itself) — install that
+adapter and its underlying driver package at that point; it's out of scope for this
+tooling-only pass.
+Why: Following the literal old-style instruction (`url = env(...)` in the schema)
+is not a style choice here — it fails schema validation outright on the installed
+version. Kept `prisma-client-js` where the task was explicit and where doing so
+doesn't conflict with anything the installed version actually requires.
+Trade-off: `prisma.config.ts` and the eventual `PrismaService`'s driver adapter both
+end up reading `DATABASE_URL` independently (CLI vs. runtime), rather than the schema
+being the single source of truth the way it was pre-v7.
+
+## D-008: User.tenantId is nullable
+Date: 2026-08-18
+Context: Drafting Tenant/User/UserSession models. SUPER_ADMIN manages tenants but
+doesn't belong to one; COMPANY_ADMIN, SUPPORT_USER, and CUSTOMER each belong to
+exactly one tenant.
+Decision: `User.tenantId` is nullable (`String?`), with `tenant Tenant? @relation(...)`.
+Null means platform-level (SUPER_ADMIN only).
+Why: Forcing `tenantId` to be non-null would require either a fake "platform" tenant
+row or attaching SUPER_ADMIN to an arbitrary real tenant — both are modeling lies for
+a role that operates across tenants, not within one.
+Trade-off: The schema can't enforce "non-null unless SUPER_ADMIN" — that invariant
+lives in the service layer (or a future `CHECK` constraint), not the column type. A
+bug in user-creation logic could produce a tenant-less COMPANY_ADMIN with nothing at
+the DB level to stop it.
+
+## D-009: User uniqueness scoped to (tenantId, email), not email alone
+Date: 2026-08-18
+Context: Two tenants could each have their own `support@` alias; the same person
+could be a CUSTOMER in one tenant and staff in another. A global unique constraint on
+`email` would incorrectly reject both.
+Decision: `@@unique([tenantId, email])` on User — uniqueness scoped per tenant, not
+global.
+Why: Matches how login/lookup actually works (within a tenant context), and doesn't
+force a single global identity across tenants for people who legitimately have
+separate accounts in each.
+Trade-off: Postgres treats `NULL` as distinct from itself in unique constraints, so
+this does not prevent two different SUPER_ADMIN rows (`tenantId = NULL`) from sharing
+an email — accepted as a low-risk gap given there are only ever a handful of super
+admins. Closing it cleanly would need a partial unique index (`WHERE tenant_id IS
+NULL`), which isn't expressible in `schema.prisma` directly and would require
+hand-editing a migration.
+
+## D-010: Role as a coarse enum, fine-grained permissions layered on top later
+Date: 2026-08-18
+Context: Need to classify users (SUPER_ADMIN, COMPANY_ADMIN, SUPPORT_USER, CUSTOMER)
+now, without building the full RBAC/authorization system yet (deferred per
+CLAUDE.md). The plan's Day 12 introduces a data-driven permission system.
+Decision: `role` is a small, stable Prisma enum on User — an identity/tier
+classification, not a permissions system. Fine-grained permissions (e.g. "can this
+SUPPORT_USER close tickets") get layered on top via separate `Permission`/
+`RolePermission` tables, built in the next session (Day 12), not encoded in the enum
+itself.
+Why: A pure enum-only approach would force every permission change into a code
+change/deploy. Keeping the enum coarse and moving granular authorization into
+data-driven tables avoids that, while still keeping a cheap, indexable classification
+for broad gating. This is schema-only — no guards or permission-checking logic exist
+yet, consistent with CLAUDE.md's RBAC deferral.
+Trade-off: Until the Permission/RolePermission tables exist, the enum has no
+enforcement mechanism behind it beyond whatever ad-hoc checks get written — it's a
+placeholder for identity, not yet a working authorization system.
+
+## D-011: RolePermission references the User.role enum directly, no separate Role table
+Date: 2026-08-18
+Context: Drafting `Permission`/`RolePermission` for data-driven RBAC (Day 12
+permission system) on top of the existing `User.role` enum (SUPER_ADMIN,
+COMPANY_ADMIN, SUPPORT_USER, CUSTOMER).
+Decision: `RolePermission.role` reuses the same `UserRole` enum as `User.role`. No
+separate `Role` table.
+Why: Roles are fixed by the product, not tenant-defined — there are exactly four,
+and adding a fifth is a deploy, not a tenant action. A `Role` table earns its keep
+when roles need to be created/renamed at runtime or need their own metadata
+(display name, ordering); neither applies here. Reusing the same enum on both
+`User.role` and `RolePermission.role` constrains both columns to an identical fixed
+domain, which is effectively equivalent to an FK-backed `Role` table for a closed,
+code-controlled set — without the extra join on every permission check.
+Trade-off: If roles ever need to become dynamic/tenant-defined, this requires an
+enum-to-table migration later. That's a well-understood, deferred cost, not a
+one-way door being avoided carelessly now — consistent with not building for
+hypothetical future requirements.
+
+## D-012: Permission/RolePermission are global, not tenant-scoped
+Date: 2026-08-18
+Context: `Permission` describes product capabilities (`ticket.assign`), not tenant
+data. Roles themselves aren't tenant-scoped either — a COMPANY_ADMIN is the same
+enum value in every tenant.
+Decision: Neither `Permission` nor `RolePermission` carries a `tenantId`. Every
+tenant shares one global permission catalog and one global role→permission mapping.
+Why: Matches what the data actually represents — capabilities of the product, not
+per-tenant state. Also keeps the runtime check cheap and cacheable: `PermissionGuard`
+(Day 12) resolves `user.role` → `RolePermission` (via the `(role, permissionId)`
+unique index) → `Permission`, a lookup that's identical for every tenant and a
+natural candidate for an in-memory/Redis role→permission-keys cache later, since the
+whole catalog is small and global rather than fragmented per tenant.
+Trade-off: No tenant can have a customized permission set — a COMPANY_ADMIN has
+identical permissions in every tenant. If per-tenant permission overrides are ever
+needed, that's a separate feature (e.g. a tenant-level allow/deny override table),
+not something this schema supports.
+
+## D-013: Customer is its own model, not a User with role=CUSTOMER
+Date: 2026-08-18
+Context: Drafting `Customer`/`Ticket`/`TicketMessage`. Customers don't authenticate
+the same way staff do (separate `/customer` routes and `/api/v1/customer/*` API
+namespace already decided), and are a different relationship to a tenant — served
+by it, not employed by it.
+Decision: `Customer` is its own tenant-scoped model (`tenantId` required, unique on
+`(tenantId, email)`), entirely separate from `User`. `Ticket.assignedUserId`
+references `User` (nullable — unassigned/pre-triage tickets exist), never
+`Customer` — a customer is a ticket's subject via `customerId`, not a valid
+assignee.
+Why: One `User` table trying to serve two incompatible auth/identity models
+(staff login vs. customer access) would be worse than two separate tables. Keeping
+`Customer` separate also keeps `Ticket`'s two person-references (`customerId`,
+`assignedUserId`) unambiguous — each points at exactly one table, no shared
+identity space to disambiguate.
+Trade-off: `UserRole` already has a `CUSTOMER` enum value (from the earlier identity
+draft) that is now dead — nothing will ever create a `User` row with
+`role = CUSTOMER`. Left in place rather than touching the already-reviewed `User`
+model as a side effect of this task; worth cleaning up later. Also, nothing at the
+schema level restricts `assignedUserId` to staff roles (`SUPPORT_USER`/
+`COMPANY_ADMIN`) — that check lives in the assignment service, same pattern as
+D-008.
+
+## D-014: TicketMessage — polymorphic authorId, denormalized tenantId
+Date: 2026-08-18
+Context: A message's author is a Customer, a User, or nothing (AI-authored).
+Also, a message always belongs to a tenant-owned Ticket, so its tenant is
+technically derivable via `ticket.tenantId`.
+Decision: Single nullable `authorId` + `authorType` enum (`CUSTOMER`/`SUPPORT`/
+`AI`) rather than separate `customerAuthorId`/`userAuthorId` columns.
+`TicketMessage` also carries its own `tenantId`, denormalized from
+`ticket.tenantId`, as a real `@relation` to `Tenant` (per the "every model gets a
+required tenantId" rule stated for this batch of models).
+Why: One author field tagged by kind is the simpler, standard shape, and avoids
+spreading the same "which column is actually set" invariant across two columns
+instead of one.
+Trade-off: `authorId` cannot be a real `@relation` — it targets `Customer.id` or
+`User.id` depending on `authorType`, and Postgres has no way to express an FK that
+targets one of two different tables based on a sibling column. So there's zero
+DB-level referential integrity on `authorId`; a dangling or wrong-table value is
+only caught by service-layer validation at write time, not by the schema. Separately,
+`tenantId` on `TicketMessage` is redundant with `ticket.tenantId` — the only index
+requested for this model is `@@index([ticketId])`, not a tenant-scoped one — so the
+column exists for the "always tenant-owned" invariant rather than a query pattern,
+and nothing stops it from drifting out of sync with its ticket's actual tenant if a
+future write path sets it independently.
+
+## D-015: DocumentChunk.tenantId denormalized — justified by a named hot path
+Date: 2026-08-18
+Context: `DocumentChunk.tenantId` is technically derivable via `documentId` ->
+`Document.tenantId`. Day 27's dense retrieval runs `WHERE tenant_id = X ORDER BY
+embedding <-> query_embedding` directly against `document_chunks` — the most
+latency-sensitive query path in the app.
+Decision: Denormalize `tenantId` onto `DocumentChunk` as a real `@relation` to
+`Tenant`, with `@@index([tenantId])` for the tenant-filtered vector search.
+Why: Unlike D-014's `TicketMessage.tenantId` (added mechanically per a blanket
+"every model gets tenantId" rule, with no query to justify it), this one has a
+concrete, named hot path. Forcing every similarity search through a join to
+`documents` just to filter by tenant adds cost to the single most expensive query
+shape in the app, and a direct column filter combines with an `ivfflat`/`hnsw` ANN
+index far more predictably than a join would.
+Trade-off: Same drift risk as D-014 in principle — `tenantId` must stay in sync
+with `document.tenantId` at write time, nothing in the schema enforces that — but
+here the cost of *not* denormalizing (join on every vector search) is concrete and
+named, not speculative, which is why this one was an easy call and D-014 wasn't.
+
+## D-016: pgvector via Unsupported("vector(768)"), raw queries from Day 26
+Date: 2026-08-18
+Context: Prisma has no native vector column type. Two options: (a)
+`Unsupported("vector(768)")`, invisible to Prisma Client's normal query API,
+requiring `$queryRaw`/`$executeRaw` for all embedding reads/writes; (b) `Float[]`/
+bytes with vector math done in application code.
+Decision: `DocumentChunk.embedding` is `Unsupported("vector(768)")?`, nullable
+until Day 26 ingestion populates it. All embedding writes and similarity queries
+go through `$queryRaw`/`$executeRaw` starting Day 26-27. The actual `ivfflat`/
+`hnsw` ANN index on `embedding` is a Day 26 TODO, added via a hand-edited raw SQL
+migration — not expressible through Prisma's schema DSL, so `prisma migrate dev`
+will need `--create-only` at that point so the raw SQL can be edited before it
+applies.
+Why: Option (b) means brute-force distance computation in Node across every chunk
+row with no ANN index possible — it defeats the entire reason to use pgvector.
+`Unsupported(...)` is the only option that keeps the real Postgres `vector` type
+and its indexing.
+Trade-off: The `768` dimension is taken from the task's stated default (Gemini
+text-embedding), not independently verified against whatever model actually gets
+wired up on Day 26. `vector(N)`'s dimension is fixed per-column — if it's wrong,
+fixing it later means a real migration *and* re-embedding every existing chunk, not
+a schema tweak. Needs re-confirming before Day 26, not treated as settled by this
+draft.
+
+## D-017: AuditLog.tenantId is nullable; actorId has no relation
+Date: 2026-08-18
+Context: Every domain model in this group requires `tenantId` except `AuditLog`.
+Platform-level actions (SUPER_ADMIN creating/suspending a company) have no tenant
+context; tenant-scoped actions (approval granted, ticket reassigned) do.
+Decision: `AuditLog.tenantId` is nullable, with an optional `@relation` to
+`Tenant`. `AuditLog.actorId` is a bare, unconstrained `String?` — no `@relation` to
+`User`, unlike `Approval.resolvedById`.
+Why: This is the same reasoning as `User.tenantId` in D-008, applied to a new
+model — not a new kind of exception, the second instance of the same one.
+`actorId` is left unconstrained deliberately: an audit trail should survive even if
+the referenced user is later deleted, and some entries are system-generated with no
+real `User` row to point at (cron jobs, service actions).
+Trade-off: No DB-level referential integrity on `actorId` — a stale or invalid
+value is only caught by whatever writes audit entries, not by the schema. This is
+consistent with the polymorphic-field pattern already accepted in D-014
+(`TicketMessage.authorId`), just for a different reason (durability of the log vs.
+"points at one of two tables").
+
+## D-018: Approval.requestedById — polymorphic, no FK, nullable
+Date: 2026-08-18
+Context: An approval can be requested by an AI run or a human user. Both cases have
+a concrete row to reference (a specific `AiRun` or `User`), unlike
+`TicketMessage.authorId` (D-014) where the AI case has no row at all.
+Decision: `requestedByType` (`AI`/`USER`) + nullable `requestedById`, no `@relation`
+enforced — same shape as `TicketMessage.authorId`.
+Why: Consistent with the polymorphic-association pattern already established, and
+avoids two nullable FK columns that would still need the same "which one matches
+requestedByType" invariant enforced at the service layer, just spread across two
+columns instead of one.
+Trade-off: Same referential-integrity gap as D-014 — `requestedById` isn't checked
+against `User`/`AiRun` by the schema. Worth being precise that nullability here
+isn't structurally forced the way it was in D-014 (both requester types *do* have a
+row to point at) — it was kept nullable as a pragmatic allowance for an
+unconstrained field, not because one case has nothing to reference.
+
+## D-019: Decimal, never Float, for money-adjacent fields
+Date: 2026-08-18
+Context: `AiRun.cost`, `Payment.amount`, `Order.totalAmount`, and `Approval.amount`
+all store money-adjacent values.
+Decision: All four are `Decimal`, mapping to Postgres `numeric`.
+Why: `Float` is binary floating point and cannot represent most decimal fractions
+exactly; repeated arithmetic (summing payments, computing totals) accumulates
+rounding error. `Decimal`/`numeric` is exact.
+Trade-off: Prisma's `Decimal` is backed by `decimal.js` at runtime
+(`Prisma.Decimal`), not a native JS `number` — application code must use `Decimal`'s
+own arithmetic methods, not cast to `number` first, or the exactness gained here is
+thrown away at the first calculation. This is a discipline requirement on every
+future service that touches these fields, not something the schema can enforce by
+itself.
+
+## D-020: ivfflat chosen over hnsw for the embedding index
+Date: 2026-08-18
+Context: Applying the initial migration, including the `document_chunks.embedding`
+ANN index (added by hand, per D-016 — not expressible via Prisma's schema DSL).
+Decision: `CREATE INDEX document_chunks_embedding_idx ON document_chunks USING
+ivfflat (embedding vector_cosine_ops) WITH (lists = 100);`
+Why: ivfflat is simpler to reason about at this stage and cheaper to build than
+hnsw. The real caveat: ivfflat's index quality depends on the data present *at
+build time* — it clusters vectors into `lists` partitions based on whatever rows
+exist when the index is created. Built now, against an empty table, it will be
+low-quality (effectively meaningless clustering) once real embeddings start
+landing Day 26.
+Trade-off: This index **must be `REINDEX`ed after the first real ingestion batch**
+(or dropped and recreated) once there's actual data to cluster on — otherwise
+retrieval quality/recall silently degrades without any error. This isn't optional
+maintenance, it's a required step in the Day 26 ingestion work, not something this
+migration can do for you since there's no data yet.
+
+## D-021: vector_cosine_ops as the operator class
+Date: 2026-08-18
+Context: pgvector supports multiple distance operators/operator classes
+(`vector_l2_ops` for Euclidean `<->`, `vector_cosine_ops` for cosine `<=>`,
+`vector_ip_ops` for inner product `<#>`), and an ANN index is built against
+exactly one of them.
+Decision: `vector_cosine_ops`, matching the `<=>` (cosine distance) operator.
+Why: Cosine distance is the standard choice for text-embedding similarity search,
+where vector magnitude is generally not meaningful — only direction/orientation is.
+Trade-off, stated as plainly as possible because getting this wrong is silent, not
+loud: **Day 27's retrieval query MUST use the `<=>` operator to match this index.**
+If a query uses `<->` (L2) or `<#>` (inner product) instead, Postgres will not
+raise an error — it will simply not use this index at all and fall back to a full
+sequential scan, computing the (wrong) distance metric on every row. There is no
+warning, no exception, just a silently slow and semantically-mismatched query. This
+is the single most likely way Day 27's retrieval implementation could quietly
+underperform without anyone noticing until data volume makes the full scan
+painfully slow.
