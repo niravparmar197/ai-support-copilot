@@ -73,15 +73,18 @@ a framework or a helpful assistant defaults to including them. **Do not
 implement any of the following unless explicitly asked in the current
 request:**
 
-- Authentication
-- Multi-tenancy
-- RBAC / authorization
-- RAG (retrieval-augmented generation)
+- Authentication (and auth internals generally — session handling, token
+  refresh, password hashing)
+- Multi-tenancy isolation
+- RBAC / authorization logic
+- RAG (retrieval-augmented generation) retrieval
 - Tool authorization (for the MCP server or agent tools)
 - LangGraph / agent orchestration
+- Prompt injection defenses
 
 If a task seems to require one of these as a prerequisite, say so and ask
-rather than adding it silently.
+rather than adding it silently. This applies to agents and slash commands
+under `.claude/` too, not just direct requests.
 
 ## Backend Conventions
 
@@ -90,11 +93,55 @@ rather than adding it silently.
   with `@ApiProperty`, etc.) so the generated spec stays accurate. Swagger UI
   is served at `/api/docs` outside the `api/v1` prefix, and only mounted when
   `NODE_ENV !== 'production'`.
-
-_(More to fill in as backend conventions solidify — module structure,
-Prisma/migration workflow, testing approach, error handling, etc.)_
+- Module structure: one Nest module per domain (`tickets/`, `users/`, …),
+  each with its own `*.controller.ts`, `*.service.ts`, `dto/`, and
+  `entities/` (only the pieces that domain actually needs — don't scaffold
+  empty ones). Controllers stay thin: request/response shape and delegating
+  to the service, no business logic.
+- Validation lives in DTOs, not in controller bodies or services. Every
+  request payload gets a `class-validator`-annotated DTO; the global
+  `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`, `transform` — see
+  D-004) enforces it. If a controller method takes a body/query/params
+  object that isn't a validated DTO, that's a bug.
+- Errors: throw Nest's built-in `HttpException` subclasses
+  (`BadRequestException`, `NotFoundException`, etc.) from services; don't
+  hand-construct error response bodies. The global exception filter turns
+  every thrown error into the standard shape from D-003
+  (`{ statusCode, message, errors?, path, timestamp, requestId }`) — that
+  shape is fixed, don't add ad-hoc fields to it per-endpoint.
 
 ## Frontend Conventions
 
-_(To be filled in as frontend conventions solidify — component structure,
-state management, styling approach, testing approach, etc.)_
+- Feature-folder structure: domain-specific code lives under
+  `src/features/<domain>/` (`tickets/`, `auth/`, `customers/`, …), not
+  scattered across generic top-level folders. Shared, domain-agnostic UI
+  goes in `src/components/{ui,layout,common}`; route-level pages that
+  compose feature code go in `src/pages`.
+- Server state vs. client state: React Query owns anything that comes from
+  the backend (fetched, cached, invalidated data). Redux (`src/app/store`)
+  owns client-only UI state that has no server representation — sidebar
+  open/collapsed, modal visibility, wizard step, etc. If you're tempted to
+  put fetched data in a Redux slice, it belongs in a React Query hook
+  instead.
+- API calls: each feature gets its own `api.ts` (e.g.
+  `src/features/tickets/api.ts`) exporting functions that call the shared
+  `src/lib/api.ts` Axios instance and wrap the calls React Query cares
+  about (`useQuery`/`useMutation` hooks can live alongside or in a sibling
+  `hooks.ts`). Nothing outside `src/lib/api.ts` talks to Axios directly.
+- Component naming: PascalCase component files matching the exported
+  component name (`TicketList.tsx` exports `TicketList`). Non-component
+  modules (`api.ts`, `hooks.ts`, `types.ts`) stay lowercase.
+
+## Testing Conventions
+
+- Backend: Jest + Supertest. Unit tests are co-located next to the file
+  they test as `*.spec.ts` (e.g. `tickets.service.spec.ts` beside
+  `tickets.service.ts`). End-to-end tests live in `backend/test/` as
+  `*.e2e-spec.ts` and hit the app through HTTP via Supertest, not by
+  calling services directly.
+- Frontend: React Testing Library for component tests, co-located as
+  `*.test.tsx` next to the component under test. Prefer testing behavior
+  (what the user sees/does) over implementation detail.
+- End-to-end: Playwright, in a root-level `e2e/` directory (cross-service —
+  drives the real frontend against the real backend, so it doesn't belong
+  inside either service folder).
