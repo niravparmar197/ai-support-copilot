@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { ImpersonationBanner } from '../../features/auth/ImpersonationBanner';
 
 const navItems = [
   { to: '/platform', label: 'Platform' },
@@ -10,6 +11,7 @@ const navItems = [
 export function AppLayout() {
   return (
     <div className="flex min-h-screen flex-col">
+      <ImpersonationBanner />
       <header className="border-b border-gray-200 p-4">
         <nav className="flex gap-4">
           {navItems.map((item) => (
