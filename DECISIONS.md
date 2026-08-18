@@ -409,3 +409,44 @@ vector-searchable (a parallel `embedding` column, chunking into
 `DocumentChunk`-shaped rows, or another approach), which means re-deriving some or
 all of D-016's pgvector setup for a second table. Not solved here — flagged as a
 known gap, not an oversight.
+
+## D-024: TenantSettings — one row per tenant, starter field set
+Date: 2026-08-18
+Context: Drafting tenant-level configuration. Considered tenant-level config vs.
+per-user notification preferences vs. both; tenant-level config only was chosen.
+Decision: `TenantSettings` — one row per tenant (`tenantId` unique), holding
+`businessHours`, `branding`, `featureFlags` (all `Json?`) and `defaultSlaHours`
+(`Int?`).
+Why: A single settings row per tenant is the simplest shape for org-wide config,
+and `Json?` columns avoid a schema migration for every new setting while still
+naming the obvious, known categories explicitly rather than burying everything in
+one opaque blob.
+Trade-off: This field list is a best guess at what a support platform needs first,
+not confirmed against a spec — no plan document exists in this repo to check
+against. Expect this table to grow (new columns, or fields moving out of the `Json`
+blobs into real typed columns) as actual settings requirements show up. Per-user
+notification preferences were explicitly not built here — if that's needed later,
+it's a separate model, not something this table covers.
+
+## D-025: Notification — polymorphic target, User-only, data-driven type
+Date: 2026-08-18
+Context: Drafting in-app notifications. Needed a way to reference what a
+notification is about (a ticket, an approval, etc.) without a new relation for
+every notification-worthy entity.
+Decision: `targetType`/`targetId` are a bare, unconstrained, nullable pair — same
+pattern as `AuditLog` (D-017). `userId` is a real, required `@relation` to `User`
+only (no `Customer` recipients). `type` is a `String`, not an enum. `readAt` is a
+nullable `DateTime`, not a `read: Boolean`, and there is no `updatedAt`.
+Why: The polymorphic target avoids a new nullable FK column every time a new
+notification-worthy entity is added, consistent with the trade-off already accepted
+for `AuditLog`. `type` as a `String` follows `Permission.key`'s precedent
+(D-010/D-012) — a data-driven catalog that grows without a schema migration per
+trigger. `readAt` follows the same nullable-timestamp-as-state idiom already used
+for `UserSession.revokedAt`/`Approval.resolvedAt`, and skipping `updatedAt` follows
+the same reasoning as `UserSession` (D-014) — `readAt` is the one mutation that
+matters.
+Trade-off: No DB-level referential integrity on `targetType`/`targetId`, same gap
+as `AuditLog`. More significant: this model only covers staff-facing, in-app
+notifications. Customer-facing notifications ("your ticket was resolved") aren't
+modeled at all — not asked for, deliberately scoped out rather than guessed at, so
+that's still open if/when it's needed.

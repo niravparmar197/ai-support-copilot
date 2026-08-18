@@ -44,6 +44,8 @@ model Tenant {
   aiFeedback        AiFeedback[]
   categories        Category[]
   knowledgeArticles KnowledgeArticle[]
+  notifications     Notification[]
+  settings          TenantSettings?
 
   @@map("tenants")
 }
@@ -67,6 +69,7 @@ model User {
   uploadedDocuments Document[]
   resolvedApprovals Approval[]
   knowledgeArticles KnowledgeArticle[]
+  notifications     Notification[]
 
   // Scoped per-tenant, not global — see Q2 in the accompanying answer.
   @@unique([tenantId, email])
@@ -480,4 +483,58 @@ model KnowledgeArticle {
 
   @@index([tenantId, status])
   @@map("knowledge_articles")
+}
+
+// One row per tenant. Field list is a best-guess starter set (business
+// hours, branding, default SLA, feature flags), not confirmed against a
+// spec — expected to grow as real settings needs show up.
+model TenantSettings {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique @map("tenant_id")
+  businessHours   Json?    @map("business_hours")
+  branding        Json?
+  defaultSlaHours Int?     @map("default_sla_hours")
+  featureFlags    Json?    @map("feature_flags")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("tenant_settings")
+}
+
+// userId is a real, required @relation to User — this is staff-facing,
+// in-app notifications only. Customer-facing notifications (e.g. "your
+// ticket was resolved") aren't covered by this model; not asked for, and
+// scoping narrow rather than guessing at that shape too.
+//
+// targetType/targetId: polymorphic, bare/unconstrained, same pattern and
+// same referential-integrity trade-off as AuditLog (D-017). Both nullable —
+// not every notification is about a specific entity (onboarding, system
+// messages).
+//
+// type is a String, not an enum — same reasoning as Permission.key
+// (D-010/D-012): a data-driven catalog that grows without a migration each
+// time a new notification trigger is added.
+//
+// readAt is a nullable timestamp, not a `read: Boolean` — same idiom as
+// UserSession.revokedAt / Approval.resolvedAt. No updatedAt: readAt is the
+// one meaningful mutation, same reasoning as UserSession (D-014).
+model Notification {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  userId     String    @map("user_id")
+  type       String
+  title      String
+  body       String?
+  targetType String?   @map("target_type")
+  targetId   String?   @map("target_id")
+  readAt     DateTime? @map("read_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
