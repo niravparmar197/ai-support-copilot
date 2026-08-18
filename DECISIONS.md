@@ -368,3 +368,44 @@ warning, no exception, just a silently slow and semantically-mismatched query. T
 is the single most likely way Day 27's retrieval implementation could quietly
 underperform without anyone noticing until data volume makes the full scan
 painfully slow.
+
+## D-022: Category as a self-referencing tree, not fixed Category/Type/Item tables
+Date: 2026-08-18
+Context: Drafting CTI (Category/Type/Item) ticket-classification tables. Two shapes
+considered: one self-referencing `Category` model with a nullable `parentId`, or
+three explicit tables (`Category` → `Type` → `Item`) each FK'd to the level above.
+Decision: Single self-referencing `Category` model (`tenantId`, `parentId`, `name`).
+"3 levels" is a naming convention, not a schema constraint — nothing stops a
+4-level or 2-level branch.
+Why: Chosen over three explicit tables for flexibility — one model handles any
+depth without a schema change, and avoids three near-identical tables differing
+only in which parent FK they carry.
+Trade-off: The exact-3-levels expectation implied by "CTI" isn't enforced anywhere
+— a bug or bad data entry could produce a 5-level-deep branch or a category with no
+tenant-consistent depth, and the schema won't catch it. Also left unresolved: no
+uniqueness constraint on `Category.name` (unique per tenant? per sibling? not
+enforced at all?), and no link yet from `Ticket` to this model — `Ticket.category`
+stays a free-text field for now, since deciding how the two relate means touching
+an already-migrated model, not something to do silently as part of adding a new
+one.
+
+## D-023: KnowledgeArticle is a standalone model, not built on Document/DocumentChunk
+Date: 2026-08-18
+Context: Drafting knowledge-base article storage. Two shapes considered: a
+standalone `KnowledgeArticle` model (title/body/status), or reusing the existing
+`Document`/`DocumentChunk` RAG pipeline (D-015/D-016) with a field distinguishing
+KB-authored content from uploads.
+Decision: Standalone `KnowledgeArticle` (tenant-scoped, `categoryId` → `Category`,
+`authorId` → `User`, `title`, `body`, `status`).
+Why: `Document`'s current shape (`filename`, `mimeType`, `sizeBytes`,
+`uploadedById`) is upload-shaped, not article-shaped — reusing it would mean either
+faking those fields for hand-authored content or reworking `Document` itself.
+Standalone keeps KB authoring simple and separate from the file-upload path.
+Trade-off, the significant one: this creates **no RAG-indexing path** for KB
+content. `DocumentChunk.embedding` (D-016) only exists for `Document`-sourced
+content — if KB articles are meant to power AI Copilot answers via retrieval,
+something will eventually need to make `KnowledgeArticle` content
+vector-searchable (a parallel `embedding` column, chunking into
+`DocumentChunk`-shaped rows, or another approach), which means re-deriving some or
+all of D-016's pgvector setup for a second table. Not solved here — flagged as a
+known gap, not an oversight.
