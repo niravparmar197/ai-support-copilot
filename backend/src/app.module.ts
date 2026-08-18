@@ -7,6 +7,9 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { PlatformModule } from './platform/platform.module';
+import { CompaniesModule } from './platform/companies/companies.module';
+import { DashboardModule } from './platform/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -24,6 +27,9 @@ import { AuthModule } from './auth/auth.module';
     PrismaModule,
     HealthModule,
     AuthModule,
+    PlatformModule,
+    CompaniesModule,
+    DashboardModule,
   ],
   providers: [
     {

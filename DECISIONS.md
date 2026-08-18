@@ -450,3 +450,52 @@ as `AuditLog`. More significant: this model only covers staff-facing, in-app
 notifications. Customer-facing notifications ("your ticket was resolved") aren't
 modeled at all — not asked for, deliberately scoped out rather than guessed at, so
 that's still open if/when it's needed.
+
+## D-026: Impersonation is a stateless token claim, not a stacked/DB-tracked session
+Date: 2026-08-18
+Context: SUPER_ADMIN needs to "become" a company's admin to see the product from
+their point of view. Two shapes considered: (a) a new DB-tracked concept — an
+`ImpersonationSession` row (or new `UserSession` columns) linking an active
+impersonation back to the initiating SUPER_ADMIN, letting the server look up "is
+this session an impersonation, and by whom" independent of the token; (b) carry the
+originating SUPER_ADMIN's id as an optional claim (`impersonatorId`) directly on the
+access/refresh token payloads, alongside a completely ordinary `UserSession` row for
+the impersonated user — no new columns, no link back to the SUPER_ADMIN's original
+session at the DB level.
+Decision: (b). `AccessTokenPayload`/`RefreshTokenPayload` both gain an optional
+`impersonatorId`. Starting impersonation revokes the SUPER_ADMIN's *current* session
+(same rotate-on-use idiom `AuthService.refresh()` already uses) and mints a brand
+new `UserSession` + token pair for the target company admin, with `impersonatorId`
+set to the SUPER_ADMIN's user id. Stopping impersonation revokes that session and
+mints the SUPER_ADMIN a *brand new* session — it does not attempt to resurrect the
+one that was revoked when impersonation started. `JwtStrategy.validate()` surfaces
+this as `impersonatedBy: { userId, companyId, companyName } | null` on
+`AuthenticatedUser`, computed fresh from the token claim plus the (already-fetched)
+target user's tenant relation — never persisted as its own column.
+Why: The token already is the source of truth for "who is this request authenticated
+as" (see `AccessTokenPayload`'s existing "no permissions in the token" note) —
+adding one more optional claim to that same self-contained payload is a small,
+symmetric extension. A DB-tracked stacked-session model would let a SUPER_ADMIN
+resume their *exact* prior session on exit and would give session-management UI a
+way to show "impersonation in progress" independent of which token happens to be in
+hand, but neither is asked for here, and both add real schema/session-lifecycle
+surface area for a feature whose actual requirement is narrower: start, act as,
+stop, land back on the company page.
+Trade-off: The SUPER_ADMIN's pre-impersonation session is gone (revoked), not
+paused — exiting impersonation is indistinguishable, session-wise, from a fresh
+login as that SUPER_ADMIN. Their existing session-list UI (already built) will show
+it as a new entry, not a resumed one. There is also no DB-level way to answer "list
+every session that is currently an impersonation" or "force-end all impersonation
+sessions right now" without decoding live tokens — only per-user session
+revocation (already built) reaches an impersonation session, same as any other.
+Acceptable for a single-admin-in-practice learning project; would need revisiting
+(probably option (a)) if impersonation ever needed platform-wide visibility or
+audit beyond the `AuditLog` rows written on start/stop.
+Also decided in the same pass: impersonation targets are always a company's
+existing primary `COMPANY_ADMIN` (the same lookup `CompaniesService.getCompany()`
+already uses for its `admin` field) — there is no per-user impersonation target
+picker — and a `SUSPENDED` company's admin cannot be impersonated, enforced
+server-side (`ConflictException`) independent of the frontend's disabled button,
+since a suspended tenant's users are supposed to be locked out entirely
+(`CompaniesService.suspendCompany()` already revokes their sessions and blocks
+their login).

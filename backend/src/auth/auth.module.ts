@@ -13,5 +13,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   imports: [PassportModule, JwtModule.register({})],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
+  // CompaniesModule injects AuthService directly for
+  // POST /platform/companies/:id/impersonate rather than duplicating
+  // token-minting logic (D-026).
+  exports: [AuthService],
 })
 export class AuthModule {}

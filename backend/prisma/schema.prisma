@@ -54,14 +54,24 @@ model Tenant {
 // COMPANY_ADMIN / SUPPORT_USER / CUSTOMER: tenantId is always set — enforced
 // in the service layer, not the schema (see Q1 in the accompanying answer).
 model User {
-  id           String     @id @default(cuid())
-  tenantId     String?    @map("tenant_id")
-  email        String
-  passwordHash String     @map("password_hash")
-  role         UserRole
-  status       UserStatus
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
+  id                String     @id @default(cuid())
+  tenantId          String?    @map("tenant_id")
+  email             String
+  name              String?
+  passwordHash      String     @map("password_hash")
+  role              UserRole
+  status            UserStatus
+  // True when the account was provisioned with a password the user didn't
+  // choose (e.g. a Super Admin-set temporary password on company
+  // creation), until they change it. Set correctly at creation time
+  // starting now; there is no enforcement yet (no guard blocks a user who
+  // hasn't reset one) — that's a real gap, tracked as a TODO rather than
+  // silently skipped, because retrofitting this column's meaning onto
+  // existing rows later would be ambiguous in a way that setting it
+  // correctly from day one is not.
+  mustResetPassword Boolean    @default(true) @map("must_reset_password")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
 
   tenant            Tenant?            @relation(fields: [tenantId], references: [id])
   sessions          UserSession[]

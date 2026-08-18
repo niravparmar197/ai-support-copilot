@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Req,
   Res,
@@ -17,8 +19,10 @@ import { AuthService } from './auth.service';
 import { REFRESH_TOKEN_COOKIE } from './auth.constants';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { LoginDto } from './dto/login.dto';
+import { SessionResponseDto } from './dto/session-response.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import type { AuthenticatedUser } from './types/authenticated-user.type';
+import { requestMeta } from './utils/request-meta.util';
 import { toSafeUser } from './utils/to-safe-user.util';
 
 function readRefreshCookie(req: Request): string | undefined {
@@ -50,10 +54,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const user = await this.authService.validateUser(dto.email, dto.password);
-    await this.authService.login(user, res, {
-      userAgent: req.headers['user-agent'],
-      ip: req.ip,
-    });
+    await this.authService.login(user, res, requestMeta(req));
     return toSafeUser(user);
   }
 
@@ -78,7 +79,7 @@ export class AuthController {
       throw new UnauthorizedException();
     }
 
-    await this.authService.refresh(refreshToken, res);
+    await this.authService.refresh(refreshToken, res, requestMeta(req));
     return { status: 'ok' };
   }
 
@@ -89,10 +90,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Log out and revoke the current session' })
   @ApiResponse({ status: 200, description: 'Logged out; clears cookies.' })
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.authService.logout(readRefreshCookie(req), res);
     return { status: 'ok' };
   }
@@ -107,5 +105,64 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Not authenticated.' })
   me(@CurrentUser() user: AuthenticatedUser) {
     return user;
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "List the current user's active sessions" })
+  @ApiResponse({ status: 200, type: [SessionResponseDto] })
+  listSessions(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.listSessions(user.id, user.sessionId);
+  }
+
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Revoke one session' })
+  @ApiResponse({ status: 200, description: 'Revoked.' })
+  @ApiResponse({
+    status: 404,
+    description:
+      "Session doesn't exist or doesn't belong to the current user (same response either way).",
+  })
+  async revokeSession(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    await this.authService.revokeSession(user.id, id);
+    return { status: 'ok' };
+  }
+
+  @Post('sessions/revoke-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Revoke every session except the current one' })
+  @ApiResponse({ status: 200, description: 'Revoked; returns the count.' })
+  revokeAllOtherSessions(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.revokeAllOtherSessions(user.id, user.sessionId);
+  }
+
+  // Deliberately JwtAuthGuard only, no @Roles — the caller is whoever is
+  // *currently* impersonated (a COMPANY_ADMIN, never SUPER_ADMIN), so a
+  // SUPER_ADMIN-only guard here would lock out the one identity that ever
+  // needs to call this. AuthService.stopImpersonation() itself rejects the
+  // call (400) if the caller's token has no impersonatorId claim to unwind.
+  @Post('stop-impersonation')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'End the current impersonation session and restore the original SUPER_ADMIN session',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Restored; sets new auth cookies. Returns the id of the company that was being impersonated.',
+  })
+  @ApiResponse({ status: 400, description: 'Not currently impersonating.' })
+  stopImpersonation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.authService.stopImpersonation(user, res, requestMeta(req));
   }
 }

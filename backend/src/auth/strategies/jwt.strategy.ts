@@ -45,12 +45,42 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     //     15-minute access token lifetime rather than a longer window.
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
+      include: { tenant: true },
     });
 
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException();
     }
 
-    return toSafeUser(user);
+    // Live check, not just "sessions were revoked when the tenant was
+    // suspended" (CompaniesService.suspendCompany). An access token is a
+    // self-contained JWT that stays cryptographically valid for its full
+    // 15-minute lifetime regardless of what happens to the UserSession row
+    // it was issued alongside — revoking that row only blocks the *next*
+    // refresh, not the token currently in hand. This check is what
+    // actually closes the "still-valid access token" window; session
+    // revocation alone does not (see Q6 in the accompanying answer).
+    if (user.tenant?.status === 'SUSPENDED') {
+      throw new UnauthorizedException();
+    }
+
+    // Guarded on user.tenantId (not just payload.impersonatorId) so this
+    // can never claim an impersonation for a tenant-less user — impersonation
+    // targets are always a company's COMPANY_ADMIN (D-026), which always has
+    // a tenant, but this stays correct instead of asserting it.
+    const impersonatedBy =
+      payload.impersonatorId && user.tenantId
+        ? {
+            userId: payload.impersonatorId,
+            companyId: user.tenantId,
+            companyName: user.tenant?.name ?? '',
+          }
+        : null;
+
+    return {
+      ...toSafeUser(user),
+      sessionId: payload.sessionId,
+      impersonatedBy,
+    };
   }
 }
