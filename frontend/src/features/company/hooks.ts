@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchCompanyDashboard } from './dashboardApi';
 import {
   activateUser,
   createUser,
@@ -7,6 +8,14 @@ import {
 } from './usersApi';
 
 const USERS_QUERY_KEY = ['company', 'users'];
+const DASHBOARD_QUERY_KEY = ['company', 'dashboard'];
+
+export function useCompanyDashboard() {
+  return useQuery({
+    queryKey: DASHBOARD_QUERY_KEY,
+    queryFn: fetchCompanyDashboard,
+  });
+}
 
 export function useUsers(page: number) {
   return useQuery({
