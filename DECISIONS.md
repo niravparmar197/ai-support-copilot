@@ -499,3 +499,55 @@ server-side (`ConflictException`) independent of the frontend's disabled button,
 since a suspended tenant's users are supposed to be locked out entirely
 (`CompaniesService.suspendCompany()` already revokes their sessions and blocks
 their login).
+
+## D-027: Company Admin can create/manage Support Users only
+Date: 2026-08-18
+Context: Day 14 user management lets a `COMPANY_ADMIN` provision staff within
+their own tenant. `CreateCompanyDto`'s admin-creation path (D-006-era, Day 6)
+already covers how a *company's first* `COMPANY_ADMIN` gets created — by a
+`SUPER_ADMIN`, not by another `COMPANY_ADMIN`. Without a deliberate boundary, a
+generic "create a user" endpoint would let a `COMPANY_ADMIN` mint another
+`COMPANY_ADMIN` in their own tenant, or (worse, if tenant scoping were ever
+loosened) in someone else's.
+Decision: `UsersModule` (`backend/src/company/users/`) only ever creates, lists,
+deactivates, and reactivates `SUPPORT_USER` rows. The role isn't a field on
+`CreateUserDto` at all — `UsersService.createUser` hardcodes `role: 'SUPPORT_USER'`
+server-side, so there's no payload shape that could request anything else. Every
+other endpoint (list/deactivate/activate) filters by `{ tenantId, role:
+'SUPPORT_USER' }` too, not just create, so the boundary holds even for operations
+on existing rows, not only new ones. `COMPANY_ADMIN` provisioning stays exclusive
+to `CompaniesService.createCompany()`'s `SUPER_ADMIN`-only path.
+Why: Closing this off by construction (no role field to validate) is stronger than
+closing it by validation (reject `role: 'COMPANY_ADMIN'` if sent) — there's no
+value to reject in the first place, so a future refactor can't accidentally loosen
+a check and reopen the privilege-escalation path.
+Trade-off: If a tenant ever legitimately needs a second `COMPANY_ADMIN` (co-admins),
+this module can't create one — that would need a deliberate new endpoint (probably
+`SUPER_ADMIN`-only, mirroring company creation) rather than a relaxed role field
+here.
+
+## D-028: User deactivation revokes sessions, same as company suspension
+Date: 2026-08-18
+Context: Day 14's deactivate action needed to decide whether "deactivated" means
+"can't log in again" or "is locked out right now." Day 7's `suspendCompany()`
+already answered this question at the tenant level: it revokes every active
+`UserSession` for the tenant so a suspended company's staff are locked out
+immediately, not just on their next login attempt.
+Decision: `UsersService.deactivateUser()` follows the identical pattern at the
+single-user level — sets `status: INACTIVE` and revokes every active session for
+that one user, in the same transaction, idempotent (deactivating an
+already-inactive user is a no-op 200). `activateUser()` is the symmetric
+reactivation and does not restore sessions (a fresh login is required either way).
+Why: Consistency — a Company Admin reading "deactivate" should get the same
+lockout guarantee a Super Admin's "suspend" already provides, not a weaker
+next-login-only version. Reusing the established pattern also means no new
+decision about *how* to revoke was needed here.
+Trade-off: None beyond what D-007 already accepted — unlike the tenant-suspension
+case, there's no separate "still-valid access token" gap to trade off here, because
+`JwtStrategy.validate()` already re-fetches the user and checks `status !==
+'ACTIVE'` live on *every* authenticated request (not just on refresh), for any
+user, tenant-suspended or not. Deactivation is therefore effective on the very
+next request, not just the next refresh; revoking sessions on top of that is about
+closing the refresh-token path and keeping the sessions list honest, the same
+scope `revokeAllOtherSessions` already has, not about closing a token-TTL window
+that doesn't exist here.

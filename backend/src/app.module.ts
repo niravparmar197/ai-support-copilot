@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { PlatformModule } from './platform/platform.module';
 import { CompaniesModule } from './platform/companies/companies.module';
 import { DashboardModule } from './platform/dashboard/dashboard.module';
+import { UsersModule } from './company/users/users.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { DashboardModule } from './platform/dashboard/dashboard.module';
     PlatformModule,
     CompaniesModule,
     DashboardModule,
+    UsersModule,
   ],
   providers: [
     {
