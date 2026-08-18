@@ -49,6 +49,14 @@ class EnvironmentVariables {
 
   @IsEnum(Environment)
   NODE_ENV: Environment;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_ACCESS_SECRET: string;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_REFRESH_SECRET: string;
 }
 
 export function validate(config: Record<string, unknown>) {

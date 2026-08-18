@@ -5,6 +5,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { validate } from './config/env.validation';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { HealthModule } from './health/health.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -19,7 +21,9 @@ import { HealthModule } from './health/health.module';
         limit: 100,
       },
     ]),
+    PrismaModule,
     HealthModule,
+    AuthModule,
   ],
   providers: [
     {
