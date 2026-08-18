@@ -15,6 +15,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
+import { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
 import { REFRESH_TOKEN_COOKIE } from './auth.constants';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -34,7 +35,10 @@ function readRefreshCookie(req: Request): string | undefined {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly permissionsService: PermissionsService,
+  ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -103,8 +107,9 @@ export class AuthController {
     description: 'The current user (never includes passwordHash).',
   })
   @ApiResponse({ status: 401, description: 'Not authenticated.' })
-  me(@CurrentUser() user: AuthenticatedUser) {
-    return user;
+  async me(@CurrentUser() user: AuthenticatedUser) {
+    const permissions = await this.permissionsService.getKeysForRole(user.role);
+    return { ...user, permissions };
   }
 
   @Get('sessions')
