@@ -19,6 +19,13 @@ export function useCurrentUser() {
   });
 }
 
+// Derived from useCurrentUser() — no separate network call, since /auth/me
+// already returns the resolved permission keys for the user's role.
+export function usePermissions() {
+  const { data: user } = useCurrentUser();
+  return new Set(user?.permissions ?? []);
+}
+
 export function useLogin() {
   const queryClient = useQueryClient();
 

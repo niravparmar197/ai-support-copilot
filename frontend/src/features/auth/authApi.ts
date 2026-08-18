@@ -22,6 +22,9 @@ export interface CurrentUser {
   createdAt: string;
   updatedAt: string;
   impersonatedBy: ImpersonatedBy | null;
+  // Permission keys resolved from the role -> RolePermission catalog (Day
+  // 12/13 backend), e.g. 'approval.approve'. Global per role, not per user.
+  permissions: string[];
 }
 
 // Every non-SUPER_ADMIN role lands here today — there's no per-role
