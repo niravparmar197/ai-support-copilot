@@ -1,7 +1,16 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { useCustomers, useDeleteCustomer } from '../hooks';
 import { CompanyCustomers } from './CompanyCustomers';
+
+function renderComponent() {
+  return render(
+    <MemoryRouter>
+      <CompanyCustomers />
+    </MemoryRouter>,
+  );
+}
 
 vi.mock('../hooks', () => ({
   useCustomers: vi.fn(),
@@ -33,7 +42,7 @@ describe('CompanyCustomers', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useDeleteCustomer>);
 
-    render(<CompanyCustomers />);
+    renderComponent();
 
     expect(screen.getByText('ada@example.com')).toBeInTheDocument();
   });
@@ -49,7 +58,7 @@ describe('CompanyCustomers', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useDeleteCustomer>);
 
-    render(<CompanyCustomers />);
+    renderComponent();
     for (const button of screen.getAllByRole('button', { name: /delete/i })) {
       fireEvent.click(button);
     }
@@ -67,7 +76,7 @@ describe('CompanyCustomers', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useDeleteCustomer>);
 
-    render(<CompanyCustomers />);
+    renderComponent();
     for (const button of screen.getAllByRole('button', { name: /new customer/i })) {
       fireEvent.click(button);
     }

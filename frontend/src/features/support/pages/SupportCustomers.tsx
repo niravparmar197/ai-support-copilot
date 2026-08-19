@@ -1,14 +1,34 @@
 import { useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import Box from '@mui/material/Box';
+import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
-import { DataGrid, type GridColDef } from '@mui/x-data-grid';
+import {
+  DataGrid,
+  type GridColDef,
+  type GridRenderCellParams,
+} from '@mui/x-data-grid';
 import { useCustomers } from '../../company/hooks';
 import type { Customer } from '../../company/customersApi';
 
 const PAGE_SIZE = 20;
 
 const columns: GridColDef<Customer>[] = [
-  { field: 'name', headerName: 'Name', flex: 1, minWidth: 160 },
+  {
+    field: 'name',
+    headerName: 'Name',
+    flex: 1,
+    minWidth: 160,
+    renderCell: (params: GridRenderCellParams<Customer>) => (
+      <Link
+        component={RouterLink}
+        to={`/support/customers/${params.row.id}`}
+        underline="hover"
+      >
+        {params.row.name}
+      </Link>
+    ),
+  },
   { field: 'email', headerName: 'Email', flex: 1, minWidth: 200 },
   {
     field: 'phone',

@@ -9,6 +9,7 @@ import { CompanyAiEvaluation } from '../../features/company/pages/CompanyAiEvalu
 import { CompanyAiPrompts } from '../../features/company/pages/CompanyAiPrompts';
 import { CompanyAiUsage } from '../../features/company/pages/CompanyAiUsage';
 import { CompanyApprovals } from '../../features/company/pages/CompanyApprovals';
+import { CompanyCustomerDetail } from '../../features/company/pages/CompanyCustomerDetail';
 import { CompanyCustomers } from '../../features/company/pages/CompanyCustomers';
 import { CompanyDashboard } from '../../features/company/pages/CompanyDashboard';
 import { CompanyDocuments } from '../../features/company/pages/CompanyDocuments';
@@ -88,6 +89,7 @@ export const router = createBrowserRouter([
       { index: true, element: <CompanyDashboard /> },
       { path: 'users', element: <CompanyUsers /> },
       { path: 'customers', element: <CompanyCustomers /> },
+      { path: 'customers/:id', element: <CompanyCustomerDetail /> },
       { path: 'tickets', element: <CompanyTickets /> },
       { path: 'tickets/:id', element: <CompanyTicketDetail /> },
       { path: 'documents', element: <CompanyDocuments /> },
@@ -110,6 +112,7 @@ export const router = createBrowserRouter([
       { path: 'tickets/:id', element: <CompanyTicketDetail /> },
       { path: 'copilot', element: <SupportCopilot /> },
       { path: 'customers', element: <SupportCustomers /> },
+      { path: 'customers/:id', element: <CompanyCustomerDetail /> },
     ],
   },
   {

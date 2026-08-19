@@ -47,6 +47,11 @@ export async function fetchCustomers(
   return response.data;
 }
 
+export async function fetchCustomer(id: string): Promise<Customer> {
+  const response = await api.get<Customer>(`/company/customers/${id}`);
+  return response.data;
+}
+
 export async function createCustomer(
   input: CreateCustomerInput,
 ): Promise<Customer> {

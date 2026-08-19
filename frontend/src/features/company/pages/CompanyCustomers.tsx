@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
+import Link from '@mui/material/Link';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import {
@@ -27,7 +29,21 @@ export function CompanyCustomers() {
 
   const columns: GridColDef<Customer>[] = useMemo(
     () => [
-      { field: 'name', headerName: 'Name', flex: 1, minWidth: 160 },
+      {
+        field: 'name',
+        headerName: 'Name',
+        flex: 1,
+        minWidth: 160,
+        renderCell: (params: GridRenderCellParams<Customer>) => (
+          <Link
+            component={RouterLink}
+            to={`/company/customers/${params.row.id}`}
+            underline="hover"
+          >
+            {params.row.name}
+          </Link>
+        ),
+      },
       { field: 'email', headerName: 'Email', flex: 1, minWidth: 200 },
       {
         field: 'phone',

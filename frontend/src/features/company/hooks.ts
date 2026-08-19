@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createCustomer,
   deleteCustomer,
+  fetchCustomer,
   fetchCustomers,
   updateCustomer,
 } from './customersApi';
 import { fetchCompanyDashboard } from './dashboardApi';
+import { fetchCustomerOrders } from './ordersApi';
 import { fetchTicketMessages, sendTicketMessage } from './ticketMessagesApi';
 import {
   assignTicket,
@@ -23,6 +25,7 @@ import {
 const USERS_QUERY_KEY = ['company', 'users'];
 const DASHBOARD_QUERY_KEY = ['company', 'dashboard'];
 const CUSTOMERS_QUERY_KEY = ['company', 'customers'];
+const CUSTOMER_ORDERS_QUERY_KEY = ['company', 'customer-orders'];
 const TICKETS_QUERY_KEY = ['company', 'tickets'];
 const TICKET_MESSAGES_QUERY_KEY = ['company', 'ticket-messages'];
 
@@ -52,6 +55,20 @@ export function useUpdateCustomer() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: CUSTOMERS_QUERY_KEY });
     },
+  });
+}
+
+export function useCustomer(id: string) {
+  return useQuery({
+    queryKey: [...CUSTOMERS_QUERY_KEY, id],
+    queryFn: () => fetchCustomer(id),
+  });
+}
+
+export function useCustomerOrders(customerId: string) {
+  return useQuery({
+    queryKey: [...CUSTOMER_ORDERS_QUERY_KEY, customerId],
+    queryFn: () => fetchCustomerOrders(customerId),
   });
 }
 
