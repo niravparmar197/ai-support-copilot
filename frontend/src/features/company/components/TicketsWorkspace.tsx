@@ -21,6 +21,7 @@ import type {
   TicketPriority,
   TicketStatus,
 } from '../ticketsApi';
+import { selectableStatuses } from '../../tickets/ticketStatusTransitions';
 
 const PAGE_SIZE = 20;
 
@@ -30,15 +31,6 @@ interface TicketsWorkspaceProps {
   // prefixes, so this can't be hardcoded in the shared workspace.
   basePath: string;
 }
-
-const STATUS_OPTIONS: TicketStatus[] = [
-  'OPEN',
-  'ASSIGNED',
-  'IN_PROGRESS',
-  'WAITING_FOR_CUSTOMER',
-  'RESOLVED',
-  'CLOSED',
-];
 
 const PRIORITY_OPTIONS: TicketPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 
@@ -102,7 +94,7 @@ export function TicketsWorkspace({ basePath }: TicketsWorkspaceProps) {
             }
             sx={{ width: '100%' }}
           >
-            {STATUS_OPTIONS.map((status) => (
+            {selectableStatuses(params.row.status).map((status) => (
               <MenuItem key={status} value={status}>
                 {status}
               </MenuItem>
