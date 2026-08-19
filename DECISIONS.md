@@ -593,3 +593,35 @@ JWT-cookie-session auth consumer ever appears; not worth it for two. Also:
 `Customer` rows created before this migration have no password and cannot log
 in — no backfill was written, since the table was empty at migration time and
 this is a learning project, not a dataset with real accounts to preserve.
+
+## D-030: One shared TicketsService behind two differently-guarded controllers
+Date: 2026-08-19
+Context: Day 18 needed ticket CRUD reachable from two audiences — a customer
+creating/viewing their own tickets (`CustomerJwtAuthGuard`) and staff
+managing every ticket in the tenant (`JwtAuthGuard` + `@Roles`). D-029 (two
+days earlier) chose to *duplicate* `AuthService` rather than generalize it
+for exactly this kind of two-audience situation, so the same question came
+up here: duplicate `TicketsService` per controller, or share one.
+Decision: Share one `TicketsService` (`backend/src/tickets/`), imported by
+both `CompanyTicketsModule` and `CustomerTicketsModule`. Each controller
+calls differently-scoped methods (`createForCustomer`/`listForCustomer`/
+`getForCustomer` vs. `listForTenant`/`getForTenant`/`updateForTenant`) —
+the authorization boundary lives in *which method* a
+controller is allowed to call and *what scope it passes in*, not in two
+copies of the query logic.
+Why: D-029's duplication call was about ~250 lines of stateful,
+security-critical sequencing per side (token rotation, reuse-detection,
+timing-safe errors) where a shared abstraction would have to thread that
+complexity through a parameter just to serve two callers. `TicketsService`
+has none of that — it's parameterized Prisma queries (`where: { tenantId,
+customerId? }`, an `include` for denormalized summaries, an audit-log
+write). Sharing it means one place to fix a query bug or add a field to the
+response shape, and the two controllers stay honest about their own
+boundary simply by which methods exist on their side of the call.
+Trade-off: The service itself has to be trusted to enforce scoping
+correctly on every method (e.g. `getForCustomer` checking `customerId`
+ownership) — a mistake there is reachable from both audiences at once,
+unlike two independent implementations where a bug is contained to one
+side. Acceptable here because every method's scoping is a one-line
+`where` clause, not the kind of subtle state machine D-029 was guarding
+against.
