@@ -14,6 +14,7 @@ import { DashboardModule } from './platform/dashboard/dashboard.module';
 import { UsersModule } from './company/users/users.module';
 import { CompanyDashboardModule } from './company/dashboard/dashboard.module';
 import { CustomersModule } from './company/customers/customers.module';
+import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { CustomersModule } from './company/customers/customers.module';
     UsersModule,
     CompanyDashboardModule,
     CustomersModule,
+    CustomerAuthModule,
   ],
   providers: [
     {

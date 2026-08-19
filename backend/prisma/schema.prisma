@@ -156,21 +156,48 @@ enum MessageAuthorType {
 }
 
 model Customer {
-  id        String   @id @default(cuid())
-  tenantId  String   @map("tenant_id")
-  name      String
-  email     String
-  phone     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  name     String
+  email    String
+  phone    String?
+  // Added Day 17 (D-029) — customer-portal login. Every Customer row from
+  // here on is provisioned with a temporary password (CreateCustomerDto),
+  // same pattern as User. Existing pre-Day-17 rows, if any, have no
+  // password and can't log in until one is set — no backfill migration,
+  // consistent with this being a learning project rather than a
+  // production dataset with real customer accounts to preserve.
+  passwordHash      String   @map("password_hash")
+  mustResetPassword Boolean  @default(true) @map("must_reset_password")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
-  tickets Ticket[]
-  orders  Order[]
+  tenant   Tenant            @relation(fields: [tenantId], references: [id])
+  tickets  Ticket[]
+  orders   Order[]
+  sessions CustomerSession[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
   @@map("customers")
+}
+
+// Mirrors UserSession exactly — own table rather than a nullable userId +
+// new customerId on UserSession, consistent with D-013's "Customer is its
+// own model" reasoning extended to sessions (see D-029).
+model CustomerSession {
+  id               String    @id @default(cuid())
+  customerId       String    @map("customer_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ip               String?
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@map("customer_sessions")
 }
 
 // assignedUserId is nullable — unassigned tickets exist (OPEN, pre-triage).

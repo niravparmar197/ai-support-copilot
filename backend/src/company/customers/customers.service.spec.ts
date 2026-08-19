@@ -58,7 +58,7 @@ describe('CustomersService', () => {
 
     const result = await service.createCustomer(
       TENANT_ID,
-      { name: 'Ada Lovelace', email: 'ada@example.com' },
+      { name: 'Ada Lovelace', email: 'ada@example.com', temporaryPassword: 'a-very-long-password' },
       ACTOR_ID,
     );
 
@@ -74,7 +74,11 @@ describe('CustomersService', () => {
     });
 
     await expect(
-      service.createCustomer(TENANT_ID, { name: 'Ada', email: 'ada@example.com' }, ACTOR_ID),
+      service.createCustomer(
+        TENANT_ID,
+        { name: 'Ada', email: 'ada@example.com', temporaryPassword: 'a-very-long-password' },
+        ACTOR_ID,
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 

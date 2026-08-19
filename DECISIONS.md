@@ -551,3 +551,45 @@ next request, not just the next refresh; revoking sessions on top of that is abo
 closing the refresh-token path and keeping the sessions list honest, the same
 scope `revokeAllOtherSessions` already has, not about closing a token-TTL window
 that doesn't exist here.
+
+## D-029: Customer auth is a separate, parallel stack — not a generalized one
+Date: 2026-08-19
+Context: Day 17's customer portal needs customers to log in, but `Customer`
+(D-013) is deliberately its own model with no relationship to `User` or its
+auth flow. `AuthService`/`JwtStrategy`/`UserSession` already encode a lot of
+deliberate, hard-won behavior (refresh-token rotation, reuse-detection treated
+as theft, timing-safe generic login errors, the `__Host-` cookie prefix, live
+per-request status checks) — the question was whether to generalize that stack
+to serve both identities, or duplicate it.
+Decision: Duplicate it. `CustomerAuthService`/`CustomerJwtStrategy` mirror
+`AuthService`/`JwtStrategy` method-for-method, with their own `CustomerSession`
+table (own FK to `Customer`, not a nullable `userId` + new `customerId` bolted
+onto `UserSession`), own JWT secrets (`JWT_CUSTOMER_ACCESS_SECRET` /
+`JWT_CUSTOMER_REFRESH_SECRET`, not the staff secrets with a `type` claim), and
+own cookie names (`__Host-customer_access_token` / `__Host-customer_refresh_token`,
+not the staff cookies). A `Customer` gets a `passwordHash` +
+`mustResetPassword` (mirrors `User`), provisioned via a required
+`temporaryPassword` on `CreateCustomerDto` (Day 16) — the same
+staff-provisions-a-temp-password pattern used for every other account type,
+not a self-registration or magic-link flow (both considered, both would have
+introduced open questions — tenant resolution for self-signup with no public
+company slug/subdomain, or standing up this repo's first-ever mailer
+integration for magic links — bigger than "make the portal reachable").
+Why: Separate secrets and cookie names mean a customer token structurally
+cannot verify against a staff route or vice versa, independent of whether
+every payload-shape check is written correctly everywhere — the isolation
+holds even if a future guard is wired wrong. A separate `CustomerSession`
+table keeps `UserSession`'s queries and constraints exactly as they are,
+consistent with D-013's "Customer is its own model" reasoning extended to
+sessions. Generalizing two ~250-line services with this much sequencing
+(rotate-then-create, revoke-on-reuse, cookie ordering) into one parameterized
+implementation now — for exactly two consumers — is the premature abstraction
+CLAUDE.md warns against; duplicating is more code but each side stays
+independently readable and debuggable.
+Trade-off: A bug fixed in one auth flow (e.g. a subtle rotation-timing issue)
+doesn't automatically fix the other — whoever touches one needs to remember
+the other exists. Worth revisiting (extract a shared base) if a third
+JWT-cookie-session auth consumer ever appears; not worth it for two. Also:
+`Customer` rows created before this migration have no password and cannot log
+in — no backfill was written, since the table was empty at migration time and
+this is a learning project, not a dataset with real accounts to preserve.

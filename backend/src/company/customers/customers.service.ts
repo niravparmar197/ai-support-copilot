@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { hashPassword } from '../../auth/utils/hash-password.util';
 import type { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import type { CreateCustomerDto } from './dto/create-customer.dto';
 import type {
@@ -31,6 +32,8 @@ export class CustomersService {
     dto: CreateCustomerDto,
     actorId: string,
   ): Promise<CustomerResponseDto> {
+    const passwordHash = await hashPassword(dto.temporaryPassword);
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const customer = await tx.customer.create({
@@ -39,6 +42,8 @@ export class CustomersService {
             name: dto.name,
             email: dto.email,
             phone: dto.phone,
+            passwordHash,
+            mustResetPassword: true,
           },
         });
 

@@ -57,6 +57,17 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   JWT_REFRESH_SECRET: string;
+
+  // Deliberately separate from the staff secrets above (D-029) — a
+  // customer token must never verify against a staff route or vice versa,
+  // even if a payload-shape check were ever missed somewhere.
+  @IsString()
+  @IsNotEmpty()
+  JWT_CUSTOMER_ACCESS_SECRET: string;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_CUSTOMER_REFRESH_SECRET: string;
 }
 
 export function validate(config: Record<string, unknown>) {
