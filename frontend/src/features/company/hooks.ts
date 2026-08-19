@@ -6,6 +6,7 @@ import {
   updateCustomer,
 } from './customersApi';
 import { fetchCompanyDashboard } from './dashboardApi';
+import { fetchTickets, updateTicket } from './ticketsApi';
 import {
   activateUser,
   createUser,
@@ -16,6 +17,7 @@ import {
 const USERS_QUERY_KEY = ['company', 'users'];
 const DASHBOARD_QUERY_KEY = ['company', 'dashboard'];
 const CUSTOMERS_QUERY_KEY = ['company', 'customers'];
+const TICKETS_QUERY_KEY = ['company', 'tickets'];
 
 export function useCustomers(page: number) {
   return useQuery({
@@ -103,3 +105,22 @@ export function useActivateUser() {
     },
   });
 }
+
+export function useTickets(page: number) {
+  return useQuery({
+    queryKey: [...TICKETS_QUERY_KEY, page],
+    queryFn: () => fetchTickets(page),
+  });
+}
+
+export function useUpdateTicket() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateTicket,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TICKETS_QUERY_KEY });
+    },
+  });
+}
+
