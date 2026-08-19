@@ -6,7 +6,7 @@ import {
   updateCustomer,
 } from './customersApi';
 import { fetchCompanyDashboard } from './dashboardApi';
-import { fetchTickets, updateTicket } from './ticketsApi';
+import { assignTicket, fetchTickets, updateTicket } from './ticketsApi';
 import {
   activateUser,
   createUser,
@@ -121,6 +121,28 @@ export function useUpdateTicket() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TICKETS_QUERY_KEY });
     },
+  });
+}
+
+export function useAssignTicket() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: assignTicket,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TICKETS_QUERY_KEY });
+    },
+  });
+}
+
+// For the assign dialog's Support User picker — reuses fetchUsers (already
+// SUPPORT_USER-only, see UsersService.listUsers) with a larger page size
+// than the Users management page's own useUsers(page) so the whole list
+// fits without a second pagination control inside a dialog.
+export function useAssignableSupportUsers() {
+  return useQuery({
+    queryKey: [...USERS_QUERY_KEY, 'assignable'],
+    queryFn: () => fetchUsers(1, 100),
   });
 }
 

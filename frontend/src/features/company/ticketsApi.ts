@@ -54,6 +54,11 @@ export interface UpdateTicketInput {
   category?: string;
 }
 
+export interface AssignTicketInput {
+  id: string;
+  assignedUserId: string | null;
+}
+
 export async function fetchTickets(
   page: number,
   pageSize = 20,
@@ -69,5 +74,15 @@ export async function updateTicket({
   ...input
 }: UpdateTicketInput): Promise<Ticket> {
   const response = await api.patch<Ticket>(`/company/tickets/${id}`, input);
+  return response.data;
+}
+
+export async function assignTicket({
+  id,
+  assignedUserId,
+}: AssignTicketInput): Promise<Ticket> {
+  const response = await api.patch<Ticket>(`/company/tickets/${id}/assign`, {
+    assignedUserId,
+  });
   return response.data;
 }

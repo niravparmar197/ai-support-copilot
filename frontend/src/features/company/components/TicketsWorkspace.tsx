@@ -1,14 +1,18 @@
 import { useMemo, useState } from 'react';
+import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
+import IconButton from '@mui/material/IconButton';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import {
   DataGrid,
   type GridColDef,
   type GridRenderCellParams,
 } from '@mui/x-data-grid';
+import { AssignTicketDialog } from './AssignTicketDialog';
 import { useTickets, useUpdateTicket } from '../hooks';
 import type {
   Ticket,
@@ -38,10 +42,11 @@ const PRIORITY_COLOR: Record<TicketPriority, 'default' | 'warning' | 'error'> = 
 
 // Shared by CompanyTickets (COMPANY_ADMIN) and SupportTickets
 // (SUPPORT_USER) — both roles have identical capabilities on tickets
-// (list, update fields), unlike Customers where SUPPORT_USER is
+// (list, update fields, assign), unlike Customers where SUPPORT_USER is
 // read-only. One workspace, two thin page wrappers.
 export function TicketsWorkspace() {
   const [page, setPage] = useState(0); // DataGrid pages are 0-indexed
+  const [assignTarget, setAssignTarget] = useState<Ticket | null>(null);
   const { data, isLoading } = useTickets(page + 1);
   const updateTicket = useUpdateTicket();
 
@@ -130,6 +135,20 @@ export function TicketsWorkspace() {
         width: 130,
         valueFormatter: (value: string) => new Date(value).toLocaleDateString(),
       },
+      {
+        field: 'actions',
+        headerName: 'Actions',
+        width: 100,
+        sortable: false,
+        filterable: false,
+        renderCell: (params: GridRenderCellParams<Ticket>) => (
+          <Tooltip title="Assign">
+            <IconButton size="small" onClick={() => setAssignTarget(params.row)}>
+              <AssignmentIndIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ),
+      },
     ],
     [updateTicket],
   );
@@ -153,6 +172,14 @@ export function TicketsWorkspace() {
         autoHeight
         getRowHeight={() => 56}
       />
+
+      {assignTarget && (
+        <AssignTicketDialog
+          ticket={assignTarget}
+          open={Boolean(assignTarget)}
+          onClose={() => setAssignTarget(null)}
+        />
+      )}
     </Box>
   );
 }
