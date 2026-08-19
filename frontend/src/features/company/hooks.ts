@@ -1,4 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  createCustomer,
+  deleteCustomer,
+  fetchCustomers,
+  updateCustomer,
+} from './customersApi';
 import { fetchCompanyDashboard } from './dashboardApi';
 import {
   activateUser,
@@ -9,6 +15,47 @@ import {
 
 const USERS_QUERY_KEY = ['company', 'users'];
 const DASHBOARD_QUERY_KEY = ['company', 'dashboard'];
+const CUSTOMERS_QUERY_KEY = ['company', 'customers'];
+
+export function useCustomers(page: number) {
+  return useQuery({
+    queryKey: [...CUSTOMERS_QUERY_KEY, page],
+    queryFn: () => fetchCustomers(page),
+  });
+}
+
+export function useCreateCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: createCustomer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CUSTOMERS_QUERY_KEY });
+    },
+  });
+}
+
+export function useUpdateCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateCustomer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CUSTOMERS_QUERY_KEY });
+    },
+  });
+}
+
+export function useDeleteCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteCustomer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CUSTOMERS_QUERY_KEY });
+    },
+  });
+}
 
 export function useCompanyDashboard() {
   return useQuery({
