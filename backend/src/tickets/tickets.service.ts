@@ -9,6 +9,7 @@ import type {
   TicketResponseDto,
 } from './dto/ticket-response.dto';
 import type { UpdateTicketDto } from './dto/update-ticket.dto';
+import { assertValidTransition, isValidTransition } from './ticket-status-transitions';
 
 const TICKET_INCLUDE = {
   customer: { select: { id: true, name: true, email: true } },
@@ -106,7 +107,11 @@ export class TicketsService {
     dto: UpdateTicketDto,
     actorId: string,
   ): Promise<TicketResponseDto> {
-    await this.findTenantTicket(tenantId, id);
+    const existing = await this.findTenantTicket(tenantId, id);
+
+    if (dto.status) {
+      assertValidTransition(existing.status, dto.status);
+    }
 
     const ticket = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.ticket.update({
@@ -191,16 +196,23 @@ export class TicketsService {
     return toTicketResponse(ticket);
   }
 
+  // Deliberately narrower than "any table-valid move to ASSIGNED/OPEN" —
+  // the table also allows IN_PROGRESS -> ASSIGNED for a staff-initiated
+  // manual update (see D-031), but reassigning an in-progress ticket to a
+  // different Support User must NOT reset it back to ASSIGNED; only the
+  // literal OPEN <-> ASSIGNED pair auto-transitions here, same behavior
+  // as before D-031, just validated against the shared table instead of
+  // a standalone check.
   private nextStatusForAssignment(
     currentStatus: TicketStatus,
     assignedUserId: string | null,
   ): TicketStatus | undefined {
     if (assignedUserId !== null && currentStatus === 'OPEN') {
-      return 'ASSIGNED';
+      return isValidTransition('OPEN', 'ASSIGNED') ? 'ASSIGNED' : undefined;
     }
 
     if (assignedUserId === null && currentStatus === 'ASSIGNED') {
-      return 'OPEN';
+      return isValidTransition('ASSIGNED', 'OPEN') ? 'OPEN' : undefined;
     }
 
     return undefined;

@@ -3,6 +3,7 @@ import type { MessageAuthorType, TicketMessage } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateTicketMessageDto } from './dto/create-ticket-message.dto';
 import type { TicketMessageResponseDto } from './dto/ticket-message-response.dto';
+import { assertValidTransition } from './ticket-status-transitions';
 import { TicketsService } from './tickets.service';
 
 // Shared by CompanyTicketsController and CustomerTicketsController, same
@@ -33,8 +34,52 @@ export class TicketMessagesService {
     ticketId: string,
     dto: CreateTicketMessageDto,
   ): Promise<TicketMessageResponseDto> {
-    await this.ticketsService.getForCustomer(tenantId, customerId, ticketId);
-    return this.create(tenantId, ticketId, 'CUSTOMER', customerId, dto);
+    const ticket = await this.ticketsService.getForCustomer(
+      tenantId,
+      customerId,
+      ticketId,
+    );
+    const response = await this.create(
+      tenantId,
+      ticketId,
+      'CUSTOMER',
+      customerId,
+      dto,
+    );
+
+    // D-031/D-020: a customer reply while the ticket is sitting in
+    // WAITING_FOR_CUSTOMER is exactly the signal that state exists to
+    // wait for — moves it back to IN_PROGRESS automatically rather than
+    // leaving it stuck until a staff member notices and updates it by
+    // hand. Runs through the same transition table as every other status
+    // change (trivially valid — WAITING_FOR_CUSTOMER -> IN_PROGRESS is in
+    // the table), not a special-cased bypass.
+    if (ticket.status === 'WAITING_FOR_CUSTOMER') {
+      assertValidTransition('WAITING_FOR_CUSTOMER', 'IN_PROGRESS');
+
+      await this.prisma.$transaction([
+        this.prisma.ticket.update({
+          where: { id: ticketId },
+          data: { status: 'IN_PROGRESS' },
+        }),
+        this.prisma.auditLog.create({
+          data: {
+            tenantId,
+            actorId: customerId,
+            action: 'ticket.status_changed',
+            targetType: 'ticket',
+            targetId: ticketId,
+            metadata: {
+              from: 'WAITING_FOR_CUSTOMER',
+              to: 'IN_PROGRESS',
+              trigger: 'customer_reply',
+            },
+          },
+        }),
+      ]);
+    }
+
+    return response;
   }
 
   async listForStaff(

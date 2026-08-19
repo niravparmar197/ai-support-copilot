@@ -9,18 +9,26 @@ function buildService(
   prismaOverrides: Record<string, unknown>,
   ticketsServiceOverrides: Record<string, unknown> = {},
 ) {
-  const prisma = {
+  const prisma: Record<string, any> = {
     ticketMessage: {
       create: jest.fn(),
       findMany: jest.fn(),
     },
+    ticket: { update: jest.fn() },
+    auditLog: { create: jest.fn() },
     customer: { findMany: jest.fn().mockResolvedValue([]) },
     user: { findMany: jest.fn().mockResolvedValue([]) },
     ...prismaOverrides,
   };
+  prisma.$transaction = jest.fn(async (arg: unknown) => {
+    if (Array.isArray(arg)) {
+      return Promise.all(arg);
+    }
+    return (arg as (tx: unknown) => Promise<unknown>)(prisma);
+  });
   const ticketsService = {
-    getForTenant: jest.fn().mockResolvedValue({ id: TICKET_ID }),
-    getForCustomer: jest.fn().mockResolvedValue({ id: TICKET_ID }),
+    getForTenant: jest.fn().mockResolvedValue({ id: TICKET_ID, status: 'OPEN' }),
+    getForCustomer: jest.fn().mockResolvedValue({ id: TICKET_ID, status: 'OPEN' }),
     ...ticketsServiceOverrides,
   };
 
@@ -79,6 +87,59 @@ describe('TicketMessagesService', () => {
         data: expect.objectContaining({ authorType: 'CUSTOMER', authorId: 'customer-1' }),
       }),
     );
+  });
+
+  describe('customer-reply auto-transition (D-031)', () => {
+    it('moves WAITING_FOR_CUSTOMER to IN_PROGRESS when the customer replies', async () => {
+      const update = jest.fn().mockResolvedValue({});
+      const { service, prisma } = buildService(
+        {
+          ticketMessage: { create: jest.fn().mockResolvedValue(fakeMessage()) },
+          ticket: { update },
+        },
+        {
+          getForCustomer: jest
+            .fn()
+            .mockResolvedValue({ id: TICKET_ID, status: 'WAITING_FOR_CUSTOMER' }),
+        },
+      );
+
+      await service.createFromCustomer(TENANT_ID, 'customer-1', TICKET_ID, {
+        content: 'Still broken',
+      });
+
+      expect(update).toHaveBeenCalledWith({
+        where: { id: TICKET_ID },
+        data: { status: 'IN_PROGRESS' },
+      });
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'ticket.status_changed',
+            metadata: expect.objectContaining({ trigger: 'customer_reply' }),
+          }),
+        }),
+      );
+    });
+
+    it('leaves the status alone when the ticket is not WAITING_FOR_CUSTOMER', async () => {
+      const update = jest.fn();
+      const { service } = buildService(
+        {
+          ticketMessage: { create: jest.fn().mockResolvedValue(fakeMessage()) },
+          ticket: { update },
+        },
+        {
+          getForCustomer: jest.fn().mockResolvedValue({ id: TICKET_ID, status: 'IN_PROGRESS' }),
+        },
+      );
+
+      await service.createFromCustomer(TENANT_ID, 'customer-1', TICKET_ID, {
+        content: 'Just checking in',
+      });
+
+      expect(update).not.toHaveBeenCalled();
+    });
   });
 
   it('propagates the 404 from TicketsService for a ticket outside the caller’s scope', async () => {

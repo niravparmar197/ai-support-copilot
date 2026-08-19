@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TicketsService } from './tickets.service';
 import type { PrismaService } from '../prisma/prisma.service';
 
@@ -97,6 +97,56 @@ describe('TicketsService', () => {
     await expect(
       service.getForTenant(TENANT_ID, 'ticket-1'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  describe('updateForTenant status transitions (D-031)', () => {
+    it('allows a valid transition', async () => {
+      const ticket = fakeTicket({ status: 'OPEN' });
+      const update = jest.fn().mockResolvedValue(fakeTicket({ status: 'IN_PROGRESS' }));
+      const { service } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket), update },
+      });
+
+      await service.updateForTenant(TENANT_ID, 'ticket-1', { status: 'IN_PROGRESS' }, ACTOR_ID);
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'IN_PROGRESS' }) }),
+      );
+    });
+
+    it('rejects an invalid transition with 409', async () => {
+      const ticket = fakeTicket({ status: 'OPEN' });
+      const { service } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket) },
+      });
+
+      await expect(
+        service.updateForTenant(TENANT_ID, 'ticket-1', { status: 'RESOLVED' }, ACTOR_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects moving out of CLOSED entirely', async () => {
+      const ticket = fakeTicket({ status: 'CLOSED' });
+      const { service } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket) },
+      });
+
+      await expect(
+        service.updateForTenant(TENANT_ID, 'ticket-1', { status: 'OPEN' }, ACTOR_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('allows updating priority/category without touching status', async () => {
+      const ticket = fakeTicket({ status: 'OPEN' });
+      const update = jest.fn().mockResolvedValue(fakeTicket({ priority: 'HIGH' }));
+      const { service } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket), update },
+      });
+
+      await service.updateForTenant(TENANT_ID, 'ticket-1', { priority: 'HIGH' }, ACTOR_ID);
+
+      expect(update).toHaveBeenCalled();
+    });
   });
 
   describe('assignTicket', () => {

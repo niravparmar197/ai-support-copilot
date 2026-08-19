@@ -625,3 +625,44 @@ unlike two independent implementations where a bug is contained to one
 side. Acceptable here because every method's scoping is a one-line
 `where` clause, not the kind of subtle state machine D-029 was guarding
 against.
+
+## D-031: Ticket status is an enforced state machine, one table for every writer
+Date: 2026-08-19
+Context: `UpdateTicketDto.status` (Day 18) was `@IsEnum(TicketStatus)` only —
+any of the six values, from any other value, with no notion of a valid
+sequence. Two other call sites already moved status as a side effect without
+going through that field at all: `assignTicket`'s own two-line check
+(Day 19: `OPEN <-> ASSIGNED`) and, as of today, a customer reply during
+`WAITING_FOR_CUSTOMER` auto-advancing to `IN_PROGRESS`. Three places touching
+ticket status with three different (or absent) notions of "valid" was the
+actual gap, not just the enum being too permissive.
+Decision: One transition table (`backend/src/tickets/ticket-status-transitions.ts`,
+`ALLOWED_TRANSITIONS: Record<TicketStatus, TicketStatus[]>`) and one
+`assertValidTransition`/`isValidTransition` pair, used by all three writers —
+`TicketsService.updateForTenant` (rejects an invalid move with 409),
+`assignTicket`'s status coupling (now validated against the same table
+instead of its own check, though still narrower than "any table-valid move
+to ASSIGNED/OPEN" — see the code comment on why), and
+`TicketMessagesService.createFromCustomer`'s auto-transition. Frontend gets
+a hand-mirrored copy (`features/tickets/ticketStatusTransitions.ts`) used
+only to filter the status `<Select>`'s options — UI guidance, not
+enforcement; the backend is what actually rejects an invalid move.
+`CLOSED` is a true dead end: no entry in the table has it as a source, so
+nothing — manual update, assign, or customer reply — can move a ticket out
+of it. Same-status "transitions" are always allowed everywhere (a no-op),
+matching the idempotent-mutation pattern already used by
+`suspendCompany`/`deactivateUser`/etc.
+Why: A table beats scattered if-statements for the same reason D-012's
+permission catalog beat ad-hoc role checks — the full set of valid moves is
+readable in one place, and every writer either goes through it or is
+visibly not doing so (as `assignTicket`'s narrower check now documents
+explicitly, rather than silently diverging).
+Trade-off: `CLOSED` being fully terminal means a recurring issue needs a new
+ticket, not a reopened old one — a real product constraint, not a
+technical limitation, and reversible by adding `CLOSED: [...]` entries
+later if that turns out to be wrong. The frontend's hand-mirrored copy of
+the table can drift from the backend's (same class of risk as every other
+hand-mirrored enum in this codebase, e.g. `UserRole` in `authApi.ts`) —
+harmless here specifically because it's advisory (hides an option) rather
+than authoritative (the backend 409s regardless of what the frontend
+offered).
