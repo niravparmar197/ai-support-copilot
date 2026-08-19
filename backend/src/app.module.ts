@@ -13,6 +13,7 @@ import { CompaniesModule } from './platform/companies/companies.module';
 import { DashboardModule } from './platform/dashboard/dashboard.module';
 import { UsersModule } from './company/users/users.module';
 import { CompanyDashboardModule } from './company/dashboard/dashboard.module';
+import { CustomersModule } from './company/customers/customers.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { CompanyDashboardModule } from './company/dashboard/dashboard.module';
     DashboardModule,
     UsersModule,
     CompanyDashboardModule,
+    CustomersModule,
   ],
   providers: [
     {
