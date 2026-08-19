@@ -25,6 +25,9 @@ export interface CreateCustomerInput {
   name: string;
   email: string;
   phone?: string;
+  // Every customer now needs a password to use the portal (Day 17/D-029) —
+  // staff-provisioned at creation, same pattern as CreateUserInput.
+  temporaryPassword: string;
 }
 
 export interface UpdateCustomerInput {

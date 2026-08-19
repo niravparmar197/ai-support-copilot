@@ -18,6 +18,7 @@ import { CustomerLayout } from '../../features/customer/CustomerLayout';
 import { CustomerProfile } from '../../features/customer/pages/CustomerProfile';
 import { CustomerTicketNew } from '../../features/customer/pages/CustomerTicketNew';
 import { CustomerTickets } from '../../features/customer/pages/CustomerTickets';
+import { RequireCustomerAuth } from '../../features/customer/RequireCustomerAuth';
 import { PlatformLayout } from '../../features/platform/PlatformLayout';
 import { PlatformAuditLogs } from '../../features/platform/pages/PlatformAuditLogs';
 import { PlatformCompanies } from '../../features/platform/pages/PlatformCompanies';
@@ -30,6 +31,7 @@ import { SupportLayout } from '../../features/support/SupportLayout';
 import { SupportCopilot } from '../../features/support/pages/SupportCopilot';
 import { SupportCustomers } from '../../features/support/pages/SupportCustomers';
 import { SupportTickets } from '../../features/support/pages/SupportTickets';
+import { CustomerLoginPage } from '../../pages/CustomerLoginPage';
 import { ForbiddenPage } from '../../pages/ForbiddenPage';
 import { HomePage } from '../../pages/HomePage';
 import { LoginPage } from '../../pages/LoginPage';
@@ -49,7 +51,10 @@ export const router = createBrowserRouter([
   {
     element: <AuthLayout />,
     errorElement: <ErrorPage />,
-    children: [{ path: 'login', element: <LoginPage /> }],
+    children: [
+      { path: 'login', element: <LoginPage /> },
+      { path: 'customer/login', element: <CustomerLoginPage /> },
+    ],
   },
   {
     path: 'platform',
@@ -106,9 +111,9 @@ export const router = createBrowserRouter([
   {
     path: 'customer',
     element: (
-      <RequireRole role="CUSTOMER">
+      <RequireCustomerAuth>
         <CustomerLayout />
-      </RequireRole>
+      </RequireCustomerAuth>
     ),
     errorElement: <ErrorPage />,
     children: [

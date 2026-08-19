@@ -24,6 +24,7 @@ export function CustomerDialog({ customer, open, onClose }: CustomerDialogProps)
   const [name, setName] = useState(customer?.name ?? '');
   const [email, setEmail] = useState(customer?.email ?? '');
   const [phone, setPhone] = useState(customer?.phone ?? '');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
   const createCustomer = useCreateCustomer();
   const updateCustomer = useUpdateCustomer();
   const mutation = customer ? updateCustomer : createCustomer;
@@ -39,12 +40,15 @@ export function CustomerDialog({ customer, open, onClose }: CustomerDialogProps)
     if (customer) {
       updateCustomer.mutate({ id: customer.id, ...input }, { onSuccess: handleClose });
     } else {
-      createCustomer.mutate(input, { onSuccess: handleClose });
+      createCustomer.mutate({ ...input, temporaryPassword }, { onSuccess: handleClose });
     }
   };
 
   const error = mutation.error instanceof ApiError ? mutation.error : undefined;
-  const canSubmit = name.trim().length > 0 && email.trim().length > 0;
+  const canSubmit =
+    name.trim().length > 0 &&
+    email.trim().length > 0 &&
+    (Boolean(customer) || temporaryPassword.length >= 12);
 
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
@@ -71,6 +75,16 @@ export function CustomerDialog({ customer, open, onClose }: CustomerDialogProps)
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
           />
+          {!customer && (
+            <TextField
+              label="Temporary Password"
+              type="password"
+              fullWidth
+              helperText="At least 12 characters — the customer resets it on first login."
+              value={temporaryPassword}
+              onChange={(event) => setTemporaryPassword(event.target.value)}
+            />
+          )}
         </Stack>
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>

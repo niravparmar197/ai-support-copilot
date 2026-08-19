@@ -1,32 +1,59 @@
-import { Outlet, useNavigate } from 'react-router-dom';
-import { useCurrentUser, useLogout } from '../auth/hooks';
-import { AppSidebar } from '../navigation/AppSidebar';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useCurrentCustomer, useCustomerLogout } from './hooks';
+
+const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
+  `block rounded px-3 py-2 text-sm transition-colors ${
+    isActive
+      ? 'bg-blue-50 font-semibold text-blue-700'
+      : 'text-gray-600 hover:bg-gray-100'
+  }`;
+
+// Inline, not the shared <AppSidebar> — that component derives its role
+// from the staff useCurrentUser() (features/navigation/AppSidebar.tsx),
+// which a logged-in customer never satisfies, so it would silently render
+// nothing here. Customer's nav is 3 static links with no permission
+// gating (Customer has no permissions concept), so a small dedicated list
+// is simpler than reworking AppSidebar to serve two unrelated identities.
+function CustomerSidebar() {
+  return (
+    <nav className="w-60 shrink-0 space-y-0.5 border-r border-gray-200 p-3">
+      <NavLink to="/customer" end className={navLinkClasses}>
+        My Tickets
+      </NavLink>
+      <NavLink to="/customer/tickets/new" className={navLinkClasses}>
+        Create Ticket
+      </NavLink>
+      <NavLink to="/customer/profile" className={navLinkClasses}>
+        Profile
+      </NavLink>
+    </nav>
+  );
+}
 
 // Tailwind, not MUI — mirrors PlatformLayout's structure (sidebar + top bar
 // with user email/logout) but stays on Tailwind like the rest of the
 // non-platform-admin app (see theme.ts's ThemeProvider scoping comment).
 //
-// Reachable only once customer authentication exists — Customer is its own
-// model, entirely separate from User (see DECISIONS.md D-013), so no
-// User row ever has role CUSTOMER today. This route tree is scaffolding for
-// that later day, same as the AI sub-pages are scaffolding for Day 25+.
+// Customer auth landed Day 17 (D-029) — a separate stack from staff auth,
+// so this reads useCurrentCustomer()/useCustomerLogout() here, not the
+// staff useCurrentUser()/useLogout() the earlier scaffolding stubbed in.
 export function CustomerLayout() {
-  const { data: user } = useCurrentUser();
-  const logoutMutation = useLogout();
+  const { data: customer } = useCurrentCustomer();
+  const logoutMutation = useCustomerLogout();
   const navigate = useNavigate();
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
-      onSuccess: () => navigate('/login', { replace: true }),
+      onSuccess: () => navigate('/customer/login', { replace: true }),
     });
   };
 
   return (
     <div className="flex min-h-screen">
-      <AppSidebar />
+      <CustomerSidebar />
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-end gap-3 border-b border-gray-200 px-4 py-3">
-          <span className="text-sm text-gray-600">{user?.email}</span>
+          <span className="text-sm text-gray-600">{customer?.email}</span>
           <button
             type="button"
             onClick={handleLogout}
