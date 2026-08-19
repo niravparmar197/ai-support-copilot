@@ -12,10 +12,12 @@ import { CompanyApprovals } from '../../features/company/pages/CompanyApprovals'
 import { CompanyCustomers } from '../../features/company/pages/CompanyCustomers';
 import { CompanyDashboard } from '../../features/company/pages/CompanyDashboard';
 import { CompanyDocuments } from '../../features/company/pages/CompanyDocuments';
+import { CompanyTicketDetail } from '../../features/company/pages/CompanyTicketDetail';
 import { CompanyTickets } from '../../features/company/pages/CompanyTickets';
 import { CompanyUsers } from '../../features/company/pages/CompanyUsers';
 import { CustomerLayout } from '../../features/customer/CustomerLayout';
 import { CustomerProfile } from '../../features/customer/pages/CustomerProfile';
+import { CustomerTicketDetail } from '../../features/customer/pages/CustomerTicketDetail';
 import { CustomerTicketNew } from '../../features/customer/pages/CustomerTicketNew';
 import { CustomerTickets } from '../../features/customer/pages/CustomerTickets';
 import { RequireCustomerAuth } from '../../features/customer/RequireCustomerAuth';
@@ -87,6 +89,7 @@ export const router = createBrowserRouter([
       { path: 'users', element: <CompanyUsers /> },
       { path: 'customers', element: <CompanyCustomers /> },
       { path: 'tickets', element: <CompanyTickets /> },
+      { path: 'tickets/:id', element: <CompanyTicketDetail /> },
       { path: 'documents', element: <CompanyDocuments /> },
       { path: 'approvals', element: <CompanyApprovals /> },
       { path: 'ai/evaluation', element: <CompanyAiEvaluation /> },
@@ -104,6 +107,7 @@ export const router = createBrowserRouter([
     errorElement: <ErrorPage />,
     children: [
       { index: true, element: <SupportTickets /> },
+      { path: 'tickets/:id', element: <CompanyTicketDetail /> },
       { path: 'copilot', element: <SupportCopilot /> },
       { path: 'customers', element: <SupportCustomers /> },
     ],
@@ -119,6 +123,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <CustomerTickets /> },
       { path: 'tickets/new', element: <CustomerTicketNew /> },
+      { path: 'tickets/:id', element: <CustomerTicketDetail /> },
       { path: 'profile', element: <CustomerProfile /> },
     ],
   },

@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import AssignmentIndIcon from '@mui/icons-material/AssignmentInd';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
+import Link from '@mui/material/Link';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Tooltip from '@mui/material/Tooltip';
@@ -21,6 +23,13 @@ import type {
 } from '../ticketsApi';
 
 const PAGE_SIZE = 20;
+
+interface TicketsWorkspaceProps {
+  // /company/tickets from CompanyTickets, /support/tickets from
+  // SupportTickets — the two roles' detail routes live at different
+  // prefixes, so this can't be hardcoded in the shared workspace.
+  basePath: string;
+}
 
 const STATUS_OPTIONS: TicketStatus[] = [
   'OPEN',
@@ -44,7 +53,7 @@ const PRIORITY_COLOR: Record<TicketPriority, 'default' | 'warning' | 'error'> = 
 // (SUPPORT_USER) — both roles have identical capabilities on tickets
 // (list, update fields, assign), unlike Customers where SUPPORT_USER is
 // read-only. One workspace, two thin page wrappers.
-export function TicketsWorkspace() {
+export function TicketsWorkspace({ basePath }: TicketsWorkspaceProps) {
   const [page, setPage] = useState(0); // DataGrid pages are 0-indexed
   const [assignTarget, setAssignTarget] = useState<Ticket | null>(null);
   const { data, isLoading } = useTickets(page + 1);
@@ -52,7 +61,21 @@ export function TicketsWorkspace() {
 
   const columns: GridColDef<Ticket>[] = useMemo(
     () => [
-      { field: 'subject', headerName: 'Subject', flex: 1, minWidth: 200 },
+      {
+        field: 'subject',
+        headerName: 'Subject',
+        flex: 1,
+        minWidth: 200,
+        renderCell: (params: GridRenderCellParams<Ticket>) => (
+          <Link
+            component={RouterLink}
+            to={`${basePath}/${params.row.id}`}
+            underline="hover"
+          >
+            {params.row.subject}
+          </Link>
+        ),
+      },
       {
         field: 'customer',
         headerName: 'Customer',
@@ -150,7 +173,7 @@ export function TicketsWorkspace() {
         ),
       },
     ],
-    [updateTicket],
+    [updateTicket, basePath],
   );
 
   return (

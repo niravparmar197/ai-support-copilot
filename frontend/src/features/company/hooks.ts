@@ -6,7 +6,13 @@ import {
   updateCustomer,
 } from './customersApi';
 import { fetchCompanyDashboard } from './dashboardApi';
-import { assignTicket, fetchTickets, updateTicket } from './ticketsApi';
+import { fetchTicketMessages, sendTicketMessage } from './ticketMessagesApi';
+import {
+  assignTicket,
+  fetchTicket,
+  fetchTickets,
+  updateTicket,
+} from './ticketsApi';
 import {
   activateUser,
   createUser,
@@ -18,6 +24,7 @@ const USERS_QUERY_KEY = ['company', 'users'];
 const DASHBOARD_QUERY_KEY = ['company', 'dashboard'];
 const CUSTOMERS_QUERY_KEY = ['company', 'customers'];
 const TICKETS_QUERY_KEY = ['company', 'tickets'];
+const TICKET_MESSAGES_QUERY_KEY = ['company', 'ticket-messages'];
 
 export function useCustomers(page: number) {
   return useQuery({
@@ -143,6 +150,33 @@ export function useAssignableSupportUsers() {
   return useQuery({
     queryKey: [...USERS_QUERY_KEY, 'assignable'],
     queryFn: () => fetchUsers(1, 100),
+  });
+}
+
+export function useTicket(id: string) {
+  return useQuery({
+    queryKey: [...TICKETS_QUERY_KEY, id],
+    queryFn: () => fetchTicket(id),
+  });
+}
+
+export function useTicketMessages(ticketId: string) {
+  return useQuery({
+    queryKey: [...TICKET_MESSAGES_QUERY_KEY, ticketId],
+    queryFn: () => fetchTicketMessages(ticketId),
+  });
+}
+
+export function useSendTicketMessage(ticketId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (content: string) => sendTicketMessage({ ticketId, content }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [...TICKET_MESSAGES_QUERY_KEY, ticketId],
+      });
+    },
   });
 }
 

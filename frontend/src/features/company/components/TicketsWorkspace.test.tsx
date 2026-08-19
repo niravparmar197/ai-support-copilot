@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import {
   useAssignableSupportUsers,
@@ -58,7 +59,11 @@ describe('TicketsWorkspace assign action', () => {
       isLoading: false,
     } as unknown as ReturnType<typeof useAssignableSupportUsers>);
 
-    render(<TicketsWorkspace />);
+    render(
+      <MemoryRouter>
+        <TicketsWorkspace basePath="/company/tickets" />
+      </MemoryRouter>,
+    );
 
     for (const button of screen.getAllByRole('button', { name: /assign/i })) {
       fireEvent.click(button);

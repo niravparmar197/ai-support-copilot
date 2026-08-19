@@ -69,6 +69,11 @@ export async function fetchTickets(
   return response.data;
 }
 
+export async function fetchTicket(id: string): Promise<Ticket> {
+  const response = await api.get<Ticket>(`/company/tickets/${id}`);
+  return response.data;
+}
+
 export async function updateTicket({
   id,
   ...input

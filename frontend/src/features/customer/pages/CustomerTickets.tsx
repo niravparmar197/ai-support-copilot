@@ -54,8 +54,13 @@ export function CustomerTickets() {
             <tbody className="divide-y divide-gray-100">
               {data.data.map((ticket) => (
                 <tr key={ticket.id}>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {ticket.subject}
+                  <td className="px-4 py-2 text-sm">
+                    <Link
+                      to={`/customer/tickets/${ticket.id}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {ticket.subject}
+                    </Link>
                   </td>
                   <td className="px-4 py-2 text-sm text-gray-600">
                     {STATUS_LABELS[ticket.status] ?? ticket.status}

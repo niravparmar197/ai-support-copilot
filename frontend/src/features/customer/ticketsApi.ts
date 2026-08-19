@@ -47,6 +47,11 @@ export async function fetchMyTickets(
   return response.data;
 }
 
+export async function fetchMyTicket(id: string): Promise<CustomerTicket> {
+  const response = await api.get<CustomerTicket>(`/customer/tickets/${id}`);
+  return response.data;
+}
+
 export async function createTicket(
   input: CreateTicketInput,
 ): Promise<CustomerTicket> {
