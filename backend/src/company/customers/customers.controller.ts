@@ -63,6 +63,17 @@ export class CustomersController {
     return this.customersService.listCustomers(user.tenantId!, query);
   }
 
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a single customer' })
+  @ApiResponse({ status: 200, type: CustomerResponseDto })
+  @ApiResponse({
+    status: 404,
+    description: 'No customer with that id in the caller’s company.',
+  })
+  get(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.customersService.getCustomer(user.tenantId!, id);
+  }
+
   @Patch(':id')
   @Roles('COMPANY_ADMIN')
   @ApiOperation({ summary: 'Update a customer' })

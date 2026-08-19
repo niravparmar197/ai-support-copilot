@@ -97,6 +97,13 @@ export class CustomersService {
     };
   }
 
+  // Added alongside Orders/Payments — the customer detail page needs a
+  // single-customer fetch, which Day 16 never built (only create/list/
+  // update/delete). Same 404-not-403 reasoning as every other lookup here.
+  async getCustomer(tenantId: string, id: string): Promise<CustomerResponseDto> {
+    return toCustomerResponse(await this.findTenantCustomer(tenantId, id));
+  }
+
   async updateCustomer(
     tenantId: string,
     id: string,
