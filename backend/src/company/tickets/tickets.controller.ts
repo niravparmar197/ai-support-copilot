@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { AssignTicketDto } from '../../tickets/dto/assign-ticket.dto';
 import {
   PaginatedTicketsDto,
   TicketResponseDto,
@@ -67,6 +68,30 @@ export class CompanyTicketsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.ticketsService.updateForTenant(
+      user.tenantId!,
+      id,
+      dto,
+      user.id,
+    );
+  }
+
+  @Patch(':id/assign')
+  @ApiOperation({
+    summary:
+      'Assign (or unassign, with assignedUserId: null) a ticket to a Support User',
+  })
+  @ApiResponse({ status: 200, type: TicketResponseDto })
+  @ApiResponse({
+    status: 404,
+    description:
+      'No ticket with that id, or no Support User with that id, in the caller’s company.',
+  })
+  assign(
+    @Param('id') id: string,
+    @Body() dto: AssignTicketDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ticketsService.assignTicket(
       user.tenantId!,
       id,
       dto,

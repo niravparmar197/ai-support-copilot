@@ -605,8 +605,8 @@ up here: duplicate `TicketsService` per controller, or share one.
 Decision: Share one `TicketsService` (`backend/src/tickets/`), imported by
 both `CompanyTicketsModule` and `CustomerTicketsModule`. Each controller
 calls differently-scoped methods (`createForCustomer`/`listForCustomer`/
-`getForCustomer` vs. `listForTenant`/`getForTenant`/`updateForTenant`) —
-the authorization boundary lives in *which method* a
+`getForCustomer` vs. `listForTenant`/`getForTenant`/`updateForTenant`/
+`assignTicket`) — the authorization boundary lives in *which method* a
 controller is allowed to call and *what scope it passes in*, not in two
 copies of the query logic.
 Why: D-029's duplication call was about ~250 lines of stateful,

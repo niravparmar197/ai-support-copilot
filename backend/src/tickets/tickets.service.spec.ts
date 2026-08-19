@@ -98,4 +98,100 @@ describe('TicketsService', () => {
       service.getForTenant(TENANT_ID, 'ticket-1'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  describe('assignTicket', () => {
+    it('moves an OPEN ticket to ASSIGNED when assigning a Support User', async () => {
+      const ticket = fakeTicket({ status: 'OPEN' });
+      const supportUser = { id: 'support-1', tenantId: TENANT_ID, role: 'SUPPORT_USER' };
+      const update = jest.fn().mockResolvedValue(fakeTicket({ status: 'ASSIGNED' }));
+      const { service, prisma } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket), update },
+        user: { findUnique: jest.fn().mockResolvedValue(supportUser) },
+      });
+
+      await service.assignTicket(
+        TENANT_ID,
+        'ticket-1',
+        { assignedUserId: 'support-1' },
+        ACTOR_ID,
+      );
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ assignedUserId: 'support-1', status: 'ASSIGNED' }),
+        }),
+      );
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ action: 'ticket.assigned' }) }),
+      );
+    });
+
+    it('moves an ASSIGNED ticket back to OPEN when unassigned', async () => {
+      const ticket = fakeTicket({ status: 'ASSIGNED', assignedUserId: 'support-1' });
+      const update = jest.fn().mockResolvedValue(fakeTicket({ status: 'OPEN' }));
+      const { service } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket), update },
+      });
+
+      await service.assignTicket(
+        TENANT_ID,
+        'ticket-1',
+        { assignedUserId: null },
+        ACTOR_ID,
+      );
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ assignedUserId: null, status: 'OPEN' }),
+        }),
+      );
+    });
+
+    it('does not touch status when reassigning a ticket already in progress', async () => {
+      const ticket = fakeTicket({ status: 'IN_PROGRESS', assignedUserId: 'support-1' });
+      const supportUser = { id: 'support-2', tenantId: TENANT_ID, role: 'SUPPORT_USER' };
+      const update = jest.fn().mockResolvedValue(fakeTicket({ status: 'IN_PROGRESS' }));
+      const { service } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket), update },
+        user: { findUnique: jest.fn().mockResolvedValue(supportUser) },
+      });
+
+      await service.assignTicket(
+        TENANT_ID,
+        'ticket-1',
+        { assignedUserId: 'support-2' },
+        ACTOR_ID,
+      );
+
+      const callArgs = update.mock.calls[0][0];
+      expect(callArgs.data.assignedUserId).toBe('support-2');
+      expect(callArgs.data.status).toBeUndefined();
+    });
+
+    it('404s assigning to a user who is not a Support User in the tenant', async () => {
+      const ticket = fakeTicket({ status: 'OPEN' });
+      const companyAdmin = { id: 'admin-1', tenantId: TENANT_ID, role: 'COMPANY_ADMIN' };
+      const { service } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket) },
+        user: { findUnique: jest.fn().mockResolvedValue(companyAdmin) },
+      });
+
+      await expect(
+        service.assignTicket(TENANT_ID, 'ticket-1', { assignedUserId: 'admin-1' }, ACTOR_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('404s assigning to a Support User from another tenant', async () => {
+      const ticket = fakeTicket({ status: 'OPEN' });
+      const otherTenantSupport = { id: 'support-3', tenantId: 'tenant-2', role: 'SUPPORT_USER' };
+      const { service } = buildService({
+        ticket: { findUnique: jest.fn().mockResolvedValue(ticket) },
+        user: { findUnique: jest.fn().mockResolvedValue(otherTenantSupport) },
+      });
+
+      await expect(
+        service.assignTicket(TENANT_ID, 'ticket-1', { assignedUserId: 'support-3' }, ACTOR_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
 });

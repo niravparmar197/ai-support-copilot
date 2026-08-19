@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Ticket } from '@prisma/client';
+import type { Ticket, TicketStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import type { AssignTicketDto } from './dto/assign-ticket.dto';
 import type { CreateTicketDto } from './dto/create-ticket.dto';
 import type {
   PaginatedTicketsDto,
@@ -129,6 +130,80 @@ export class TicketsService {
     });
 
     return toTicketResponse(ticket);
+  }
+
+  /**
+   * Day 19. Assigning an OPEN ticket moves it to ASSIGNED; unassigning an
+   * ASSIGNED ticket moves it back to OPEN. A ticket already past that
+   * (IN_PROGRESS, WAITING_FOR_CUSTOMER, ...) only has its assignee
+   * changed — reassignment/unassignment doesn't reset triage progress.
+   * This status coupling is a real product-behavior call, not something
+   * requested outright; see DECISIONS.md.
+   */
+  async assignTicket(
+    tenantId: string,
+    id: string,
+    dto: AssignTicketDto,
+    actorId: string,
+  ): Promise<TicketResponseDto> {
+    const existing = await this.findTenantTicket(tenantId, id);
+    const assignedUserId = dto.assignedUserId;
+
+    if (assignedUserId !== null) {
+      const target = await this.prisma.user.findUnique({
+        where: { id: assignedUserId },
+      });
+
+      if (!target || target.tenantId !== tenantId || target.role !== 'SUPPORT_USER') {
+        throw new NotFoundException();
+      }
+    }
+
+    const statusUpdate = this.nextStatusForAssignment(
+      existing.status,
+      assignedUserId,
+    );
+
+    const ticket = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ticket.update({
+        where: { id },
+        data: {
+          assignedUserId,
+          ...(statusUpdate ? { status: statusUpdate } : {}),
+        },
+        include: TICKET_INCLUDE,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId,
+          action: assignedUserId ? 'ticket.assigned' : 'ticket.unassigned',
+          targetType: 'ticket',
+          targetId: id,
+          metadata: { assignedUserId },
+        },
+      });
+
+      return updated;
+    });
+
+    return toTicketResponse(ticket);
+  }
+
+  private nextStatusForAssignment(
+    currentStatus: TicketStatus,
+    assignedUserId: string | null,
+  ): TicketStatus | undefined {
+    if (assignedUserId !== null && currentStatus === 'OPEN') {
+      return 'ASSIGNED';
+    }
+
+    if (assignedUserId === null && currentStatus === 'ASSIGNED') {
+      return 'OPEN';
+    }
+
+    return undefined;
   }
 
   private async list(
