@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -15,11 +16,14 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { AssignTicketDto } from '../../tickets/dto/assign-ticket.dto';
+import { CreateTicketMessageDto } from '../../tickets/dto/create-ticket-message.dto';
+import { TicketMessageResponseDto } from '../../tickets/dto/ticket-message-response.dto';
 import {
   PaginatedTicketsDto,
   TicketResponseDto,
 } from '../../tickets/dto/ticket-response.dto';
 import { UpdateTicketDto } from '../../tickets/dto/update-ticket.dto';
+import { TicketMessagesService } from '../../tickets/ticket-messages.service';
 import { TicketsService } from '../../tickets/tickets.service';
 
 // user.tenantId! below: @Roles() (COMPANY_ADMIN/SUPPORT_USER only)
@@ -30,7 +34,10 @@ import { TicketsService } from '../../tickets/tickets.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('COMPANY_ADMIN', 'SUPPORT_USER')
 export class CompanyTicketsController {
-  constructor(private readonly ticketsService: TicketsService) {}
+  constructor(
+    private readonly ticketsService: TicketsService,
+    private readonly ticketMessagesService: TicketMessagesService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List the caller’s company tickets (paginated)' })
@@ -92,6 +99,40 @@ export class CompanyTicketsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.ticketsService.assignTicket(
+      user.tenantId!,
+      id,
+      dto,
+      user.id,
+    );
+  }
+
+  @Get(':id/messages')
+  @ApiOperation({ summary: 'List a ticket’s conversation thread' })
+  @ApiResponse({ status: 200, type: [TicketMessageResponseDto] })
+  @ApiResponse({
+    status: 404,
+    description: 'No ticket with that id in the caller’s company.',
+  })
+  listMessages(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ticketMessagesService.listForStaff(user.tenantId!, id);
+  }
+
+  @Post(':id/messages')
+  @ApiOperation({ summary: 'Post a reply on a ticket' })
+  @ApiResponse({ status: 201, type: TicketMessageResponseDto })
+  @ApiResponse({
+    status: 404,
+    description: 'No ticket with that id in the caller’s company.',
+  })
+  createMessage(
+    @Param('id') id: string,
+    @Body() dto: CreateTicketMessageDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ticketMessagesService.createFromStaff(
       user.tenantId!,
       id,
       dto,

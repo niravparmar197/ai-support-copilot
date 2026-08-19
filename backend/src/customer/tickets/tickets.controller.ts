@@ -5,17 +5,23 @@ import { CustomerJwtAuthGuard } from '../../customer-auth/guards/customer-jwt-au
 import type { AuthenticatedCustomer } from '../../customer-auth/types/authenticated-customer.type';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { CreateTicketDto } from '../../tickets/dto/create-ticket.dto';
+import { CreateTicketMessageDto } from '../../tickets/dto/create-ticket-message.dto';
+import { TicketMessageResponseDto } from '../../tickets/dto/ticket-message-response.dto';
 import {
   PaginatedTicketsDto,
   TicketResponseDto,
 } from '../../tickets/dto/ticket-response.dto';
+import { TicketMessagesService } from '../../tickets/ticket-messages.service';
 import { TicketsService } from '../../tickets/tickets.service';
 
 @ApiTags('customer/tickets')
 @Controller('customer/tickets')
 @UseGuards(CustomerJwtAuthGuard)
 export class CustomerTicketsController {
-  constructor(private readonly ticketsService: TicketsService) {}
+  constructor(
+    private readonly ticketsService: TicketsService,
+    private readonly ticketMessagesService: TicketMessagesService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a support ticket' })
@@ -57,6 +63,38 @@ export class CustomerTicketsController {
       customer.tenantId,
       customer.id,
       id,
+    );
+  }
+
+  @Get(':id/messages')
+  @ApiOperation({ summary: 'List a ticket’s conversation thread' })
+  @ApiResponse({ status: 200, type: [TicketMessageResponseDto] })
+  @ApiResponse({ status: 404, description: 'No ticket with that id owned by the caller.' })
+  listMessages(
+    @Param('id') id: string,
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+  ) {
+    return this.ticketMessagesService.listForCustomer(
+      customer.tenantId,
+      customer.id,
+      id,
+    );
+  }
+
+  @Post(':id/messages')
+  @ApiOperation({ summary: 'Post a reply on a ticket' })
+  @ApiResponse({ status: 201, type: TicketMessageResponseDto })
+  @ApiResponse({ status: 404, description: 'No ticket with that id owned by the caller.' })
+  createMessage(
+    @Param('id') id: string,
+    @Body() dto: CreateTicketMessageDto,
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+  ) {
+    return this.ticketMessagesService.createFromCustomer(
+      customer.tenantId,
+      customer.id,
+      id,
+      dto,
     );
   }
 }
