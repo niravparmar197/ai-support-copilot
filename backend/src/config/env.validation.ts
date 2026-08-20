@@ -68,6 +68,13 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   JWT_CUSTOMER_REFRESH_SECRET: string;
+
+  // D-032: root directory LocalDiskStorageProvider writes uploaded
+  // documents under. Resolved (path.resolve) relative to the backend
+  // process's cwd if not absolute.
+  @IsString()
+  @IsNotEmpty()
+  DOCUMENT_STORAGE_PATH: string;
 }
 
 export function validate(config: Record<string, unknown>) {

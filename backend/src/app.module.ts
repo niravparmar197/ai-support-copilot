@@ -18,6 +18,7 @@ import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { CompanyTicketsModule } from './company/tickets/tickets.module';
 import { CustomerTicketsModule } from './customer/tickets/tickets.module';
 import { OrdersModule } from './company/orders/orders.module';
+import { DocumentsModule } from './company/documents/documents.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { OrdersModule } from './company/orders/orders.module';
     CompanyTicketsModule,
     CustomerTicketsModule,
     OrdersModule,
+    DocumentsModule,
   ],
   providers: [
     {

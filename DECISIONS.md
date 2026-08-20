@@ -666,3 +666,43 @@ hand-mirrored enum in this codebase, e.g. `UserRole` in `authApi.ts`) —
 harmless here specifically because it's advisory (hides an option) rather
 than authoritative (the backend 409s regardless of what the frontend
 offered).
+
+## D-032: Local disk for document storage, behind a StorageProvider interface
+Date: 2026-08-20
+Context: Day 23's document upload needs somewhere to put the actual file
+bytes — `Document` (D-002-era schema) only ever stored metadata
+(filename/mimeType/sizeBytes/status), deliberately leaving "where does the
+file live" undecided until a feature actually needed an answer. The real
+choice is local disk vs. an object store (S3): local disk has a well-known
+failure mode (which instance has the file?) the moment there's more than
+one app server, but this app deploys to a single EC2 instance (Day 61), not
+an autoscaling group — that failure mode doesn't apply yet.
+Decision: Local disk, under a root directory from `DOCUMENT_STORAGE_PATH`
+(new required env var), accessed exclusively through a `StorageProvider`
+interface (`saveFile`/`getFile`/`deleteFile`,
+`backend/src/storage/storage-provider.interface.ts`) — `LocalDiskStorageProvider`
+is the only implementation today, injected via a DI token
+(`STORAGE_PROVIDER`), never imported by concrete class anywhere outside
+`StorageModule`. Storage keys are `${tenantId}/${document.id}` — the
+server-generated id, never the user-supplied filename, so no call site
+ever needs to sanitize a filename into a safe path component (a `../` in
+an original filename simply never reaches the filesystem layer).
+`DocumentsService.uploadDocument` does a two-step write (create the DB row
+to get an id, then save the file) with a compensating delete if the file
+write fails — not a real transaction, since Postgres and the filesystem
+can't share one.
+Why: The single-instance deployment target makes local disk genuinely
+defensible now, not just convenient — see the accompanying prompt's framing.
+The interface exists so that stops being true (multiple instances, or a
+move to a managed deployment target) without forcing a rewrite of every
+place that reads or writes a document's bytes: a new `S3StorageProvider`
+class plus a one-line swap in `StorageModule` is the entire migration.
+Trade-off: No S3 implementation exists yet, so the abstraction is
+unverified against a second real backend — the interface shape is a bet
+that `saveFile`/`getFile`/`deleteFile` (all buffer-in-memory, no
+streaming) is sufficient, which may need revisiting for very large files
+regardless of which provider is behind it. The compensating-delete pattern
+has a real (narrow) gap: if the process dies between a successful file
+write and the function returning, nothing rolls back — acceptable because
+at that point the row and file are both already correct; the gap is only
+in the window before the write completes, not after.
