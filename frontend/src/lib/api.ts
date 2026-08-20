@@ -21,8 +21,14 @@ export class ApiError extends Error {
   }
 }
 
+// Exported for the rare case a feature needs a direct URL rather than
+// going through the `api` instance — e.g. a file download link, where the
+// browser's own navigation (not axios) sends the request and auth cookies
+// ride along automatically (SameSite=Lax permits this on a top-level GET).
+export const API_BASE_URL = import.meta.env.VITE_API_URL;
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: API_BASE_URL,
   withCredentials: true,
 });
 

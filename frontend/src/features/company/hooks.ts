@@ -7,6 +7,7 @@ import {
   updateCustomer,
 } from './customersApi';
 import { fetchCompanyDashboard } from './dashboardApi';
+import { deleteDocument, fetchDocuments, uploadDocument } from './documentsApi';
 import { fetchCustomerOrders } from './ordersApi';
 import { fetchTicketMessages, sendTicketMessage } from './ticketMessagesApi';
 import {
@@ -28,6 +29,7 @@ const CUSTOMERS_QUERY_KEY = ['company', 'customers'];
 const CUSTOMER_ORDERS_QUERY_KEY = ['company', 'customer-orders'];
 const TICKETS_QUERY_KEY = ['company', 'tickets'];
 const TICKET_MESSAGES_QUERY_KEY = ['company', 'ticket-messages'];
+const DOCUMENTS_QUERY_KEY = ['company', 'documents'];
 
 export function useCustomers(page: number) {
   return useQuery({
@@ -197,3 +199,31 @@ export function useSendTicketMessage(ticketId: string) {
   });
 }
 
+export function useDocuments(page: number) {
+  return useQuery({
+    queryKey: [...DOCUMENTS_QUERY_KEY, page],
+    queryFn: () => fetchDocuments(page),
+  });
+}
+
+export function useUploadDocument() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: uploadDocument,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: DOCUMENTS_QUERY_KEY });
+    },
+  });
+}
+
+export function useDeleteDocument() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteDocument,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: DOCUMENTS_QUERY_KEY });
+    },
+  });
+}
